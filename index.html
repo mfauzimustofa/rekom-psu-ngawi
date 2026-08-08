@@ -292,6 +292,18 @@
   .badge.syarat{background:#fef6e6;color:#8a6100;}
   .rekap-item ul{margin:6px 0;padding-left:18px;font-size:13px;}
   .rekap-item img{width:140px;border:1px solid var(--border);border-radius:6px;margin-top:6px;}
+  .rekap-actions{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);}
+  .word-btn{
+    background:var(--navy);
+    color:#fff;
+    border:none;
+    border-radius:7px;
+    padding:8px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .word-btn:disabled{opacity:.6;cursor:default;}
   .rekap-meta{font-size:12.5px;color:var(--muted);margin:2px 0;}
   .empty{text-align:center;color:var(--muted);font-size:13px;padding:30px 0;}
   .refresh-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
@@ -417,6 +429,7 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.min.js"></script>
 <script>
 // ============== KONFIGURASI ==============
 const SUPABASE_URL = "https://vmjebkypngaqsnfnhbwb.supabase.co";
@@ -680,7 +693,7 @@ async function loadRekap(){
     return;
   }
 
-  list.innerHTML = data.map(row => {
+  list.innerHTML = data.map((row, idx) => {
     const badgeClass = row.kesimpulan === 'Setuju' ? 'setuju' :
                         row.kesimpulan === 'Tidak Setuju' ? 'tidak' : 'syarat';
     const tanggal = new Date(row.created_at).toLocaleString('id-ID', {
@@ -702,6 +715,9 @@ async function loadRekap(){
         ${poin ? `<ul>${poin}</ul>` : ''}
         ${row.syarat ? `<div class="rekap-meta">Syarat: ${escapeHtml(row.syarat)}</div>` : ''}
         ${row.signature_data ? `<img src="${row.signature_data}" alt="tanda tangan">` : ''}
+        <div class="rekap-actions">
+          <button class="word-btn" onclick="exportWordRow(${idx})">Export Word</button>
+        </div>
       </div>
     `;
   }).join('');
@@ -712,6 +728,142 @@ function escapeHtml(str){
   return str.replace(/[&<>"']/g, m => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[m]));
+}
+
+function dataUrlToUint8Array(dataUrl){
+  const base64 = dataUrl.split(',')[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function exportWordRow(idx){
+  const row = lastRekapData[idx];
+  if(!row) return;
+
+  if(typeof window.docx === 'undefined'){
+    alert('Library pembuat Word gagal dimuat. Cek koneksi internet lalu refresh halaman.');
+    return;
+  }
+
+  const btn = document.querySelectorAll('.word-btn')[idx];
+  const originalLabel = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = 'Membuat...'; }
+
+  try{
+    const { Document, Packer, Paragraph, TextRun, AlignmentType, UnderlineType, ImageRun } = window.docx;
+
+    const label = (text) => new TextRun({ text, bold: true, size: 22 });
+    const value = (text) => new TextRun({ text: text || '-', size: 22 });
+    const fieldLine = (labelText, valueText) => new Paragraph({
+      spacing: { after: 100 },
+      children: [ label(labelText.padEnd(14, ' ')), new TextRun({ text: ': ', bold: true, size: 22 }), value(valueText) ]
+    });
+    const sectionHeading = (text) => new Paragraph({
+      spacing: { before: 200, after: 150 },
+      children: [ new TextRun({ text, bold: true, underline: { type: UnderlineType.SINGLE }, size: 22 }) ]
+    });
+
+    const children = [];
+
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 300 },
+      children: [ new TextRun({
+        text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN PERMUKIMAN KABUPATEN NGAWI',
+        bold: true, size: 24
+      }) ]
+    }));
+
+    children.push(fieldLine('Nama', row.nama));
+    children.push(fieldLine('Jabatan', row.jabatan));
+    children.push(fieldLine('NIP', row.nip));
+    children.push(fieldLine('Unit Kerja', row.unit_kerja));
+
+    children.push(sectionHeading('DATA UMUM'));
+    children.push(fieldLine('Nama Perumahan', row.nama_perumahan));
+    children.push(fieldLine('Alamat', row.alamat));
+
+    children.push(sectionHeading('HASIL PENILAIAN:'));
+    const poin = row.hasil_penilaian || [];
+    if(poin.length === 0){
+      children.push(new Paragraph({ text: '-', spacing: { after: 100 } }));
+    } else {
+      poin.forEach((p, i) => {
+        children.push(new Paragraph({
+          spacing: { after: 100 },
+          children: [ new TextRun({ text: `${i+1}. ${p}`, size: 22 }) ]
+        }));
+      });
+    }
+
+    children.push(sectionHeading('KESIMPULAN:'));
+    const opsi = ['Setuju', 'Tidak Setuju', 'Setuju, dengan syarat'];
+    opsi.forEach((opt, i) => {
+      const dipilih = row.kesimpulan === opt;
+      children.push(new Paragraph({
+        spacing: { after: 80 },
+        children: [
+          new TextRun({ text: `${i+1}. `, size: 22 }),
+          new TextRun({ text: (dipilih ? '☑ ' : '☐ ') + opt, size: 22, bold: dipilih }),
+          ...(opt === 'Setuju, dengan syarat' && dipilih && row.syarat
+            ? [ new TextRun({ text: ' sebagai berikut: ' + row.syarat, size: 22 }) ]
+            : [])
+        ]
+      }));
+    });
+
+    const tanggal = new Date(row.created_at).toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
+    children.push(new Paragraph({ spacing: { before: 400 }, children: [] }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [ new TextRun({ text: `Ngawi, ${tanggal}`, size: 22 }) ]
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 200 },
+      children: [ new TextRun({ text: 'Yang Membuat,', size: 22 }) ]
+    }));
+
+    if(row.signature_data){
+      try{
+        const imgBytes = dataUrlToUint8Array(row.signature_data);
+        children.push(new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [ new ImageRun({ data: imgBytes, type: 'png', transformation: { width: 160, height: 75 } }) ]
+        }));
+      }catch(imgErr){
+        console.error('Gagal menyisipkan gambar tanda tangan:', imgErr);
+      }
+    }
+
+    children.push(new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 100 },
+      children: [ new TextRun({ text: `(${row.nama || 'NAMA'})`, bold: true, underline: { type: UnderlineType.SINGLE }, size: 22 }) ]
+    }));
+
+    const doc = new Document({
+      sections: [{ properties: {}, children }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const safeName = (row.nama_perumahan || 'rekomendasi').replace(/[^a-z0-9]+/gi, '_');
+    a.download = `Rekomendasi_PSU_${safeName}.docx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch(err){
+    console.error(err);
+    alert('Gagal membuat file Word: ' + err.message);
+  } finally {
+    if(btn){ btn.disabled = false; btn.textContent = originalLabel; }
+  }
 }
 
 function csvEscape(val){
