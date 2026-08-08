@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rekomendasi Tim Verifikasi PSU</title>
+
+<!--
+=====================================================================
+ SETUP SUPABASE (lakukan sekali sebelum dipakai)
+=====================================================================
+1. Buka project Supabase kamu -> SQL Editor -> jalankan:
+
+  create table psu_rekomendasi (
+    id uuid primary key default gen_random_uuid(),
+    nama text not null,
+    jabatan text,
+    nip text,
+    unit_kerja text,
+    nama_perumahan text not null,
+    alamat text,
+    hasil_penilaian jsonb not null default '[]',
+    kesimpulan text not null,
+    syarat text,
+    signature_data text not null,
+    created_at timestamptz not null default now()
+  );
+
+  alter table psu_rekomendasi enable row level security;
+
+  create policy "allow insert for all"
+    on psu_rekomendasi for insert
+    with check (true);
+
+  create policy "allow read for all"
+    on psu_rekomendasi for select
+    using (true);
+
+2. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di bawah ini (Project Settings -> API).
+3. ADMIN_PASSCODE di bawah cuma pengaman ringan di sisi browser (bukan security
+   sebenarnya) supaya rekap tidak sembarangan dibuka. Kalau butuh lebih aman,
+   pasang RLS by auth atau passcode di edge function.
+=====================================================================
+-->
+
+<style>
+  :root{
+    --navy:#0b3d5c;
+    --navy-dark:#082a40;
+    --gold:#c99a2e;
+    --bg:#f4f6f8;
+    --card:#ffffff;
+    --border:#dde3e8;
+    --text:#1f2937;
+    --muted:#6b7280;
+    --danger:#b3261e;
+    --ok:#1b7a3d;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    padding-bottom:60px;
+  }
+  header{
+    background:linear-gradient(135deg,var(--navy),var(--navy-dark));
+    color:#fff;
+    padding:22px 16px 20px;
+    text-align:center;
+  }
+  header h1{
+    font-size:16px;
+    line-height:1.4;
+    margin:0 0 4px;
+    letter-spacing:.3px;
+  }
+  header p{
+    margin:0;
+    font-size:12px;
+    opacity:.85;
+  }
+  .tabs{
+    display:flex;
+    max-width:640px;
+    margin:16px auto 0;
+    padding:0 16px;
+    gap:8px;
+  }
+  .tab-btn{
+    flex:1;
+    padding:10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--card);
+    font-size:13px;
+    font-weight:600;
+    color:var(--muted);
+    cursor:pointer;
+  }
+  .tab-btn.active{
+    background:var(--navy);
+    color:#fff;
+    border-color:var(--navy);
+  }
+  .container{
+    max-width:640px;
+    margin:16px auto;
+    padding:0 16px;
+  }
+  .card{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:12px;
+    padding:18px;
+    margin-bottom:14px;
+    box-shadow:0 1px 2px rgba(0,0,0,.04);
+  }
+  .card h2{
+    font-size:13px;
+    text-transform:uppercase;
+    letter-spacing:.5px;
+    color:var(--navy);
+    margin:0 0 14px;
+    padding-bottom:8px;
+    border-bottom:2px solid var(--gold);
+  }
+  label{
+    display:block;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--text);
+    margin-bottom:5px;
+  }
+  .field{margin-bottom:14px;}
+  input[type=text], textarea, select{
+    width:100%;
+    padding:10px 11px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    font-size:14px;
+    font-family:inherit;
+    background:#fafbfc;
+    color:var(--text);
+  }
+  input:focus, textarea:focus{
+    outline:none;
+    border-color:var(--navy);
+    background:#fff;
+  }
+  textarea{resize:vertical;min-height:60px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:480px){.grid2{grid-template-columns:1fr;}}
+
+  .penilaian-row{
+    display:flex;
+    gap:8px;
+    margin-bottom:8px;
+    align-items:flex-start;
+  }
+  .penilaian-row span.num{
+    width:22px;
+    padding-top:9px;
+    font-size:13px;
+    font-weight:700;
+    color:var(--navy);
+    flex-shrink:0;
+  }
+  .penilaian-row input{flex:1;}
+  .rm-btn{
+    background:none;
+    border:none;
+    color:var(--danger);
+    font-size:20px;
+    line-height:1;
+    cursor:pointer;
+    padding:6px 4px;
+    flex-shrink:0;
+  }
+  .add-btn{
+    background:none;
+    border:1.5px dashed var(--navy);
+    color:var(--navy);
+    border-radius:8px;
+    padding:8px 12px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    width:100%;
+    margin-top:2px;
+  }
+
+  .kesimpulan-opt{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:10px 12px;
+    border:1px solid var(--border);
+    border-radius:8px;
+    margin-bottom:8px;
+    cursor:pointer;
+  }
+  .kesimpulan-opt.checked{
+    border-color:var(--navy);
+    background:#eef4f8;
+  }
+  .kesimpulan-opt input{width:auto;}
+  .kesimpulan-opt span{font-size:14px;font-weight:500;}
+  #syaratWrap{margin-top:-2px;margin-bottom:14px;display:none;}
+
+  canvas#sigPad{
+    width:100%;
+    height:180px;
+    border:1.5px dashed var(--border);
+    border-radius:8px;
+    background:#fff;
+    touch-action:none;
+    display:block;
+  }
+  .sig-actions{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-top:8px;
+  }
+  .sig-actions button{
+    background:none;
+    border:none;
+    color:var(--navy);
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .sig-hint{font-size:11.5px;color:var(--muted);}
+
+  .submit-btn{
+    width:100%;
+    padding:14px;
+    background:var(--navy);
+    color:#fff;
+    border:none;
+    border-radius:10px;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  .submit-btn:disabled{opacity:.6;cursor:default;}
+  .msg{
+    text-align:center;
+    font-size:13px;
+    margin-top:10px;
+    padding:10px;
+    border-radius:8px;
+    display:none;
+  }
+  .msg.ok{display:block;background:#e8f5ec;color:var(--ok);}
+  .msg.err{display:block;background:#fbeae9;color:var(--danger);}
+
+  /* Admin */
+  .admin-gate{text-align:center;padding:40px 16px;}
+  .admin-gate input{max-width:220px;margin:12px auto;}
+  .admin-gate button{
+    background:var(--navy);color:#fff;border:none;border-radius:8px;
+    padding:10px 22px;font-weight:600;font-size:14px;cursor:pointer;
+  }
+  .rekap-item{
+    background:var(--card);
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:14px;
+    margin-bottom:10px;
+  }
+  .rekap-item .top{
+    display:flex;justify-content:space-between;align-items:flex-start;
+    margin-bottom:8px;
+  }
+  .rekap-item .top strong{font-size:14px;}
+  .rekap-item .top small{color:var(--muted);font-size:11px;}
+  .badge{
+    display:inline-block;
+    font-size:11px;
+    font-weight:700;
+    padding:3px 9px;
+    border-radius:20px;
+  }
+  .badge.setuju{background:#e8f5ec;color:var(--ok);}
+  .badge.tidak{background:#fbeae9;color:var(--danger);}
+  .badge.syarat{background:#fef6e6;color:#8a6100;}
+  .rekap-item ul{margin:6px 0;padding-left:18px;font-size:13px;}
+  .rekap-item img{width:140px;border:1px solid var(--border);border-radius:6px;margin-top:6px;}
+  .rekap-meta{font-size:12.5px;color:var(--muted);margin:2px 0;}
+  .empty{text-align:center;color:var(--muted);font-size:13px;padding:30px 0;}
+  .refresh-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .refresh-row button{
+    background:none;border:1px solid var(--border);border-radius:7px;
+    padding:6px 12px;font-size:12px;font-weight:600;color:var(--navy);cursor:pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN PERMUKIMAN</h1>
+  <p>Kabupaten Ngawi</p>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" id="tabFormBtn" onclick="switchTab('form')">Isi Form</button>
+  <button class="tab-btn" id="tabAdminBtn" onclick="switchTab('admin')">Rekap Admin</button>
+</div>
+
+<div class="container">
+
+  <!-- ================= FORM VIEW ================= -->
+  <div id="viewForm">
+    <form id="psuForm">
+
+      <div class="card">
+        <h2>Data Petugas</h2>
+        <div class="field">
+          <label>Nama</label>
+          <input type="text" id="f_nama" required>
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Jabatan</label>
+            <input type="text" id="f_jabatan">
+          </div>
+          <div class="field">
+            <label>NIP</label>
+            <input type="text" id="f_nip">
+          </div>
+        </div>
+        <div class="field">
+          <label>Unit Kerja</label>
+          <input type="text" id="f_unit_kerja">
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Data Umum</h2>
+        <div class="field">
+          <label>Nama Perumahan</label>
+          <input type="text" id="f_nama_perumahan" required>
+        </div>
+        <div class="field">
+          <label>Alamat</label>
+          <textarea id="f_alamat" rows="2"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Hasil Penilaian</h2>
+        <div id="penilaianList"></div>
+        <button type="button" class="add-btn" onclick="addPenilaian()">+ Tambah Poin Penilaian</button>
+      </div>
+
+      <div class="card">
+        <h2>Kesimpulan</h2>
+        <label class="kesimpulan-opt" data-val="Setuju">
+          <input type="radio" name="kesimpulan" value="Setuju">
+          <span>Setuju</span>
+        </label>
+        <label class="kesimpulan-opt" data-val="Tidak Setuju">
+          <input type="radio" name="kesimpulan" value="Tidak Setuju">
+          <span>Tidak Setuju</span>
+        </label>
+        <label class="kesimpulan-opt" data-val="Setuju, dengan syarat">
+          <input type="radio" name="kesimpulan" value="Setuju, dengan syarat">
+          <span>Setuju, dengan syarat sebagai berikut</span>
+        </label>
+        <div id="syaratWrap" class="field">
+          <textarea id="f_syarat" rows="2" placeholder="Sebutkan syaratnya..."></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Tanda Tangan Digital</h2>
+        <canvas id="sigPad"></canvas>
+        <div class="sig-actions">
+          <span class="sig-hint">Tanda tangan di area putih pakai jari / mouse</span>
+          <button type="button" onclick="clearSig()">Hapus</button>
+        </div>
+      </div>
+
+      <button type="submit" class="submit-btn" id="submitBtn">Kirim Rekomendasi</button>
+      <div class="msg" id="formMsg"></div>
+    </form>
+  </div>
+
+  <!-- ================= ADMIN VIEW ================= -->
+  <div id="viewAdmin" style="display:none;">
+    <div id="adminGate" class="admin-gate card">
+      <h2 style="border:none;">Masuk Rekap</h2>
+      <input type="text" id="adminPass" placeholder="Passcode admin">
+      <br>
+      <button onclick="checkAdmin()">Masuk</button>
+      <div class="msg" id="adminMsg"></div>
+    </div>
+    <div id="adminContent" style="display:none;">
+      <div class="refresh-row">
+        <span style="font-size:13px;color:var(--muted);" id="rekapCount"></span>
+        <button onclick="loadRekap()">Refresh</button>
+      </div>
+      <div id="rekapList"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.45.4/supabase.min.js"></script>
+<script>
+// ============== KONFIGURASI ==============
+const SUPABASE_URL = "https://vmjebkypngaqsnfnhbwb.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZtamVia3lwbmdhcXNuZm5oYndiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyMTQ2MDQsImV4cCI6MjEwMTc5MDYwNH0.VqSaL4Nm5kNdMm_56SkOdT9nH_Ror3rH8XYVLB6mQrk";
+const ADMIN_PASSCODE = "ngawi2026"; // ganti sesuai kebutuhan
+// ==========================================
+
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+/* ---------- Tabs ---------- */
+function switchTab(tab){
+  document.getElementById('viewForm').style.display = tab === 'form' ? 'block' : 'none';
+  document.getElementById('viewAdmin').style.display = tab === 'admin' ? 'block' : 'none';
+  document.getElementById('tabFormBtn').classList.toggle('active', tab === 'form');
+  document.getElementById('tabAdminBtn').classList.toggle('active', tab === 'admin');
+}
+
+/* ---------- Hasil Penilaian dynamic rows ---------- */
+let penilaianCount = 0;
+function addPenilaian(value){
+  penilaianCount++;
+  const wrap = document.getElementById('penilaianList');
+  const row = document.createElement('div');
+  row.className = 'penilaian-row';
+  row.innerHTML = `
+    <span class="num">${penilaianCount}.</span>
+    <input type="text" class="penilaian-input" placeholder="Poin penilaian...">
+    <button type="button" class="rm-btn" onclick="removePenilaian(this)">&times;</button>
+  `;
+  wrap.appendChild(row);
+  if(value) row.querySelector('input').value = value;
+  renumberPenilaian();
+}
+function removePenilaian(btn){
+  btn.closest('.penilaian-row').remove();
+  renumberPenilaian();
+}
+function renumberPenilaian(){
+  const rows = document.querySelectorAll('#penilaianList .penilaian-row');
+  rows.forEach((r,i) => r.querySelector('.num').textContent = (i+1) + '.');
+  penilaianCount = rows.length;
+}
+// start with 4 rows like the original form
+for(let i=0;i<4;i++) addPenilaian();
+
+/* ---------- Kesimpulan radio behavior ---------- */
+document.querySelectorAll('.kesimpulan-opt').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('.kesimpulan-opt').forEach(o => o.classList.remove('checked'));
+    opt.classList.add('checked');
+    opt.querySelector('input').checked = true;
+    document.getElementById('syaratWrap').style.display =
+      opt.dataset.val === 'Setuju, dengan syarat' ? 'block' : 'none';
+  });
+});
+
+/* ---------- Signature pad ---------- */
+const canvas = document.getElementById('sigPad');
+const ctx = canvas.getContext('2d');
+let drawing = false, hasSig = false;
+
+function resizeCanvas(){
+  const ratio = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * ratio;
+  canvas.height = rect.height * ratio;
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#0b3d5c';
+}
+window.addEventListener('resize', () => { const img = hasSig ? canvas.toDataURL() : null; resizeCanvas(); });
+resizeCanvas();
+
+function getPos(e){
+  const rect = canvas.getBoundingClientRect();
+  const p = e.touches ? e.touches[0] : e;
+  return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+}
+function startDraw(e){
+  drawing = true; hasSig = true;
+  const pos = getPos(e);
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  e.preventDefault();
+}
+function moveDraw(e){
+  if(!drawing) return;
+  const pos = getPos(e);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+  e.preventDefault();
+}
+function endDraw(){ drawing = false; }
+
+canvas.addEventListener('mousedown', startDraw);
+canvas.addEventListener('mousemove', moveDraw);
+canvas.addEventListener('mouseup', endDraw);
+canvas.addEventListener('mouseleave', endDraw);
+canvas.addEventListener('touchstart', startDraw, {passive:false});
+canvas.addEventListener('touchmove', moveDraw, {passive:false});
+canvas.addEventListener('touchend', endDraw);
+
+function clearSig(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  hasSig = false;
+}
+
+/* ---------- Submit ---------- */
+document.getElementById('psuForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const msg = document.getElementById('formMsg');
+  const btn = document.getElementById('submitBtn');
+  msg.className = 'msg'; msg.style.display='none';
+
+  const nama = document.getElementById('f_nama').value.trim();
+  const namaPerumahan = document.getElementById('f_nama_perumahan').value.trim();
+  const kesimpulanEl = document.querySelector('input[name=kesimpulan]:checked');
+
+  if(!nama || !namaPerumahan){
+    msg.textContent = 'Nama dan Nama Perumahan wajib diisi.';
+    msg.className = 'msg err'; msg.style.display='block';
+    return;
+  }
+  if(!kesimpulanEl){
+    msg.textContent = 'Pilih salah satu kesimpulan.';
+    msg.className = 'msg err'; msg.style.display='block';
+    return;
+  }
+  if(!hasSig){
+    msg.textContent = 'Tanda tangan belum diisi.';
+    msg.className = 'msg err'; msg.style.display='block';
+    return;
+  }
+
+  const hasilPenilaian = Array.from(document.querySelectorAll('.penilaian-input'))
+    .map(i => i.value.trim())
+    .filter(v => v.length > 0);
+
+  const payload = {
+    nama,
+    jabatan: document.getElementById('f_jabatan').value.trim(),
+    nip: document.getElementById('f_nip').value.trim(),
+    unit_kerja: document.getElementById('f_unit_kerja').value.trim(),
+    nama_perumahan: namaPerumahan,
+    alamat: document.getElementById('f_alamat').value.trim(),
+    hasil_penilaian: hasilPenilaian,
+    kesimpulan: kesimpulanEl.value,
+    syarat: kesimpulanEl.value === 'Setuju, dengan syarat' ? document.getElementById('f_syarat').value.trim() : null,
+    signature_data: canvas.toDataURL('image/png')
+  };
+
+  btn.disabled = true; btn.textContent = 'Mengirim...';
+
+  const { error } = await sb.from('psu_rekomendasi').insert(payload);
+
+  btn.disabled = false; btn.textContent = 'Kirim Rekomendasi';
+
+  if(error){
+    console.error(error);
+    msg.textContent = 'Gagal mengirim: ' + error.message;
+    msg.className = 'msg err'; msg.style.display='block';
+  } else {
+    msg.textContent = 'Rekomendasi berhasil dikirim. Terima kasih.';
+    msg.className = 'msg ok'; msg.style.display='block';
+    document.getElementById('psuForm').reset();
+    document.getElementById('penilaianList').innerHTML = '';
+    penilaianCount = 0;
+    for(let i=0;i<4;i++) addPenilaian();
+    document.querySelectorAll('.kesimpulan-opt').forEach(o => o.classList.remove('checked'));
+    document.getElementById('syaratWrap').style.display = 'none';
+    clearSig();
+  }
+});
+
+/* ---------- Admin ---------- */
+let adminOk = false;
+function checkAdmin(){
+  const val = document.getElementById('adminPass').value;
+  const amsg = document.getElementById('adminMsg');
+  if(val === ADMIN_PASSCODE){
+    adminOk = true;
+    document.getElementById('adminGate').style.display = 'none';
+    document.getElementById('adminContent').style.display = 'block';
+    loadRekap();
+  } else {
+    amsg.textContent = 'Passcode salah.';
+    amsg.className = 'msg err'; amsg.style.display = 'block';
+  }
+}
+
+async function loadRekap(){
+  const list = document.getElementById('rekapList');
+  const count = document.getElementById('rekapCount');
+  list.innerHTML = '<div class="empty">Memuat...</div>';
+
+  const { data, error } = await sb.from('psu_rekomendasi')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if(error){
+    list.innerHTML = `<div class="empty">Gagal memuat data: ${error.message}</div>`;
+    return;
+  }
+
+  count.textContent = `${data.length} rekomendasi tersimpan`;
+
+  if(data.length === 0){
+    list.innerHTML = '<div class="empty">Belum ada data masuk.</div>';
+    return;
+  }
+
+  list.innerHTML = data.map(row => {
+    const badgeClass = row.kesimpulan === 'Setuju' ? 'setuju' :
+                        row.kesimpulan === 'Tidak Setuju' ? 'tidak' : 'syarat';
+    const tanggal = new Date(row.created_at).toLocaleString('id-ID', {
+      day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'
+    });
+    const poin = (row.hasil_penilaian || []).map(p => `<li>${escapeHtml(p)}</li>`).join('');
+    return `
+      <div class="rekap-item">
+        <div class="top">
+          <div>
+            <strong>${escapeHtml(row.nama_perumahan)}</strong><br>
+            <small>${tanggal}</small>
+          </div>
+          <span class="badge ${badgeClass}">${escapeHtml(row.kesimpulan)}</span>
+        </div>
+        <div class="rekap-meta"><b>${escapeHtml(row.nama)}</b>${row.jabatan ? ' — ' + escapeHtml(row.jabatan) : ''}${row.nip ? ' — NIP ' + escapeHtml(row.nip) : ''}</div>
+        ${row.unit_kerja ? `<div class="rekap-meta">${escapeHtml(row.unit_kerja)}</div>` : ''}
+        ${row.alamat ? `<div class="rekap-meta">Alamat: ${escapeHtml(row.alamat)}</div>` : ''}
+        ${poin ? `<ul>${poin}</ul>` : ''}
+        ${row.syarat ? `<div class="rekap-meta">Syarat: ${escapeHtml(row.syarat)}</div>` : ''}
+        ${row.signature_data ? `<img src="${row.signature_data}" alt="tanda tangan">` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(str){
+  if(!str) return '';
+  return str.replace(/[&<>"']/g, m => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[m]));
+}
+</script>
+</body>
+</html>
