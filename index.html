@@ -752,100 +752,190 @@ async function exportWordRow(idx){
   if(btn){ btn.disabled = true; btn.textContent = 'Membuat...'; }
 
   try{
-    const { Document, Packer, Paragraph, TextRun, AlignmentType, UnderlineType, ImageRun } = window.docx;
+    const {
+      Document, Packer, Paragraph, TextRun, AlignmentType, UnderlineType,
+      ImageRun, Table, TableRow, TableCell, WidthType, BorderStyle, HeightRule
+    } = window.docx;
 
-    const label = (text) => new TextRun({ text, bold: true, size: 22 });
-    const value = (text) => new TextRun({ text: text || '-', size: 22 });
-    const fieldLine = (labelText, valueText) => new Paragraph({
-      spacing: { after: 100 },
-      children: [ label(labelText.padEnd(14, ' ')), new TextRun({ text: ': ', bold: true, size: 22 }), value(valueText) ]
-    });
+    const FONT = 'Times New Roman';
+    const SIZE = 24; // 12pt
+    const TITLE_SIZE = 26; // 13pt
+
+    const noBorder = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+    const tableBorders = {
+      top: noBorder, bottom: noBorder, left: noBorder, right: noBorder,
+      insideHorizontal: noBorder, insideVertical: noBorder
+    };
+
+    // ---- two-column, borderless field table (aligned labels/values) ----
+    function fieldTable(rows){
+      return new Table({
+        width: { size: 9026, type: WidthType.DXA },
+        columnWidths: [2400, 6626],
+        borders: tableBorders,
+        rows: rows.map(([lbl, val]) => new TableRow({
+          children: [
+            new TableCell({
+              width: { size: 2400, type: WidthType.DXA },
+              margins: { top: 40, bottom: 40, left: 0, right: 0 },
+              children: [ new Paragraph({
+                children: [ new TextRun({ text: lbl, bold: true, font: FONT, size: SIZE }) ]
+              }) ]
+            }),
+            new TableCell({
+              width: { size: 6626, type: WidthType.DXA },
+              margins: { top: 40, bottom: 40, left: 0, right: 0 },
+              children: [ new Paragraph({
+                children: [
+                  new TextRun({ text: ': ', font: FONT, size: SIZE }),
+                  new TextRun({ text: val || '-', font: FONT, size: SIZE })
+                ]
+              }) ]
+            })
+          ]
+        }))
+      });
+    }
+
     const sectionHeading = (text) => new Paragraph({
-      spacing: { before: 200, after: 150 },
-      children: [ new TextRun({ text, bold: true, underline: { type: UnderlineType.SINGLE }, size: 22 }) ]
+      spacing: { before: 260, after: 160 },
+      children: [ new TextRun({ text, bold: true, underline: { type: UnderlineType.SINGLE }, font: FONT, size: SIZE }) ]
     });
 
     const children = [];
 
+    // ---- letterhead ----
     children.push(new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 300 },
+      spacing: { after: 20 },
+      children: [ new TextRun({ text: 'PEMERINTAH KABUPATEN NGAWI', bold: true, font: FONT, size: SIZE }) ]
+    }));
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 160 },
+      border: { bottom: { style: BorderStyle.SINGLE, size: 12, color: '000000', space: 4 } },
+      children: [ new TextRun({ text: 'DINAS PERUMAHAN RAKYAT DAN KAWASAN PERMUKIMAN', bold: true, font: FONT, size: SIZE }) ]
+    }));
+
+    // ---- title ----
+    children.push(new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 200, after: 320 },
       children: [ new TextRun({
         text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN PERMUKIMAN KABUPATEN NGAWI',
-        bold: true, size: 24
+        bold: true, font: FONT, size: TITLE_SIZE
       }) ]
     }));
 
-    children.push(fieldLine('Nama', row.nama));
-    children.push(fieldLine('Jabatan', row.jabatan));
-    children.push(fieldLine('NIP', row.nip));
-    children.push(fieldLine('Unit Kerja', row.unit_kerja));
+    // ---- data petugas ----
+    children.push(fieldTable([
+      ['Nama', row.nama],
+      ['Jabatan', row.jabatan],
+      ['NIP', row.nip],
+      ['Unit Kerja', row.unit_kerja]
+    ]));
 
+    // ---- data umum ----
     children.push(sectionHeading('DATA UMUM'));
-    children.push(fieldLine('Nama Perumahan', row.nama_perumahan));
-    children.push(fieldLine('Alamat', row.alamat));
+    children.push(fieldTable([
+      ['Nama Perumahan', row.nama_perumahan],
+      ['Alamat', row.alamat]
+    ]));
 
+    // ---- hasil penilaian ----
     children.push(sectionHeading('HASIL PENILAIAN:'));
     const poin = row.hasil_penilaian || [];
     if(poin.length === 0){
-      children.push(new Paragraph({ text: '-', spacing: { after: 100 } }));
+      children.push(new Paragraph({
+        indent: { left: 360 },
+        spacing: { after: 100 },
+        children: [ new TextRun({ text: '-', font: FONT, size: SIZE }) ]
+      }));
     } else {
       poin.forEach((p, i) => {
         children.push(new Paragraph({
-          spacing: { after: 100 },
-          children: [ new TextRun({ text: `${i+1}. ${p}`, size: 22 }) ]
+          indent: { left: 360, hanging: 260 },
+          spacing: { after: 120 },
+          alignment: AlignmentType.JUSTIFIED,
+          children: [ new TextRun({ text: `${i+1}.\t${p}`, font: FONT, size: SIZE }) ],
+          tabStops: [{ type: 'left', position: 360 }]
         }));
       });
     }
 
+    // ---- kesimpulan ----
     children.push(sectionHeading('KESIMPULAN:'));
     const opsi = ['Setuju', 'Tidak Setuju', 'Setuju, dengan syarat'];
     opsi.forEach((opt, i) => {
       const dipilih = row.kesimpulan === opt;
       children.push(new Paragraph({
-        spacing: { after: 80 },
+        indent: { left: 360, hanging: 260 },
+        spacing: { after: 100 },
         children: [
-          new TextRun({ text: `${i+1}. `, size: 22 }),
-          new TextRun({ text: (dipilih ? '☑ ' : '☐ ') + opt, size: 22, bold: dipilih }),
+          new TextRun({ text: `${i+1}.\t`, font: FONT, size: SIZE }),
+          new TextRun({ text: (dipilih ? '\u2611 ' : '\u2610 ') + opt, font: FONT, size: SIZE, bold: dipilih }),
           ...(opt === 'Setuju, dengan syarat' && dipilih && row.syarat
-            ? [ new TextRun({ text: ' sebagai berikut: ' + row.syarat, size: 22 }) ]
+            ? [ new TextRun({ text: ' sebagai berikut: ' + row.syarat, font: FONT, size: SIZE }) ]
             : [])
-        ]
+        ],
+        tabStops: [{ type: 'left', position: 360 }]
       }));
     });
 
+    // ---- signature block ----
     const tanggal = new Date(row.created_at).toLocaleDateString('id-ID', { day:'numeric', month:'long', year:'numeric' });
-    children.push(new Paragraph({ spacing: { before: 400 }, children: [] }));
+
+    children.push(new Paragraph({ spacing: { before: 420 }, children: [] }));
     children.push(new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      children: [ new TextRun({ text: `Ngawi, ${tanggal}`, size: 22 }) ]
+      indent: { left: 5040 },
+      children: [ new TextRun({ text: `Ngawi, ${tanggal}`, font: FONT, size: SIZE }) ]
     }));
     children.push(new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { after: 200 },
-      children: [ new TextRun({ text: 'Yang Membuat,', size: 22 }) ]
+      indent: { left: 5040 },
+      spacing: { after: 120 },
+      children: [ new TextRun({ text: 'Yang Membuat,', font: FONT, size: SIZE }) ]
     }));
 
     if(row.signature_data){
       try{
         const imgBytes = dataUrlToUint8Array(row.signature_data);
         children.push(new Paragraph({
-          alignment: AlignmentType.RIGHT,
-          children: [ new ImageRun({ data: imgBytes, type: 'png', transformation: { width: 160, height: 75 } }) ]
+          indent: { left: 5040 },
+          spacing: { after: 60 },
+          children: [ new ImageRun({ data: imgBytes, type: 'png', transformation: { width: 170, height: 80 } }) ]
         }));
       }catch(imgErr){
         console.error('Gagal menyisipkan gambar tanda tangan:', imgErr);
+        children.push(new Paragraph({ indent: { left: 5040 }, spacing: { before: 400, after: 60 }, children: [] }));
       }
+    } else {
+      children.push(new Paragraph({ indent: { left: 5040 }, spacing: { before: 400, after: 60 }, children: [] }));
     }
 
     children.push(new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 100 },
-      children: [ new TextRun({ text: `(${row.nama || 'NAMA'})`, bold: true, underline: { type: UnderlineType.SINGLE }, size: 22 }) ]
+      indent: { left: 5040 },
+      children: [ new TextRun({ text: `(${row.nama || 'NAMA'})`, bold: true, underline: { type: UnderlineType.SINGLE }, font: FONT, size: SIZE }) ]
     }));
+    if(row.nip){
+      children.push(new Paragraph({
+        indent: { left: 5040 },
+        children: [ new TextRun({ text: `NIP. ${row.nip}`, font: FONT, size: SIZE }) ]
+      }));
+    }
 
     const doc = new Document({
-      sections: [{ properties: {}, children }]
+      styles: {
+        default: { document: { run: { font: FONT, size: SIZE } } }
+      },
+      sections: [{
+        properties: {
+          page: {
+            size: { width: 11906, height: 16838 }, // A4
+            margin: { top: 1417, bottom: 1417, left: 1701, right: 1417 }
+          }
+        },
+        children
+      }]
     });
 
     const blob = await Packer.toBlob(doc);
