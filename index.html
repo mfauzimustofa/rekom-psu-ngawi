@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rekomendasi Tim Verifikasi PSU</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%230b3d5c'/%3E%3Ctext x='50' y='68' font-size='55' text-anchor='middle' fill='%23c99a2e' font-family='Arial'%3EP%3C/text%3E%3C/svg%3E">
 
 <!--
 =====================================================================
@@ -217,6 +218,7 @@
     background:#fff;
     touch-action:none;
     display:block;
+    cursor:crosshair;
   }
   .sig-actions{
     display:flex;
@@ -312,6 +314,7 @@
 </div>
 
 <div class="container">
+  <div class="msg err" id="globalError" style="display:none;margin-bottom:14px;"></div>
 
   <!-- ================= FORM VIEW ================= -->
   <div id="viewForm">
@@ -402,7 +405,10 @@
     <div id="adminContent" style="display:none;">
       <div class="refresh-row">
         <span style="font-size:13px;color:var(--muted);" id="rekapCount"></span>
-        <button onclick="loadRekap()">Refresh</button>
+        <div style="display:flex;gap:8px;">
+          <button onclick="exportCsv()">Export CSV</button>
+          <button onclick="loadRekap()">Refresh</button>
+        </div>
       </div>
       <div id="rekapList"></div>
     </div>
@@ -410,7 +416,7 @@
 
 </div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/supabase/2.45.4/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ============== KONFIGURASI ==============
 const SUPABASE_URL = "https://vmjebkypngaqsnfnhbwb.supabase.co";
@@ -418,7 +424,21 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const ADMIN_PASSCODE = "ngawi2026"; // ganti sesuai kebutuhan
 // ==========================================
 
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let sb = null;
+try{
+  if(typeof window.supabase === 'undefined' || !window.supabase.createClient){
+    throw new Error('Library Supabase gagal dimuat dari CDN.');
+  }
+  if(SUPABASE_ANON_KEY === 'GANTI_DENGAN_ANON_KEY_KAMU'){
+    throw new Error('SUPABASE_ANON_KEY belum diisi di dalam file HTML.');
+  }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch(err){
+  console.error(err);
+  const banner = document.getElementById('globalError');
+  banner.textContent = 'Koneksi ke database belum siap: ' + err.message + ' Coba refresh halaman, atau hubungi admin.';
+  banner.style.display = 'block';
+}
 
 /* ---------- Tabs ---------- */
 function switchTab(tab){
@@ -467,34 +487,55 @@ document.querySelectorAll('.kesimpulan-opt').forEach(opt => {
   });
 });
 
-/* ---------- Signature pad ---------- */
+/* ---------- Signature pad (pointer events: works for mouse, touch, pen) ---------- */
 const canvas = document.getElementById('sigPad');
 const ctx = canvas.getContext('2d');
 let drawing = false, hasSig = false;
+let savedImage = null; // dataURL kept across resizes so we don't lose the signature
 
-function resizeCanvas(){
+function setupCanvas(){
   const ratio = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * ratio;
-  canvas.height = rect.height * ratio;
+  const w = Math.max(rect.width, 1);
+  const h = Math.max(rect.height, 1);
+
+  canvas.width = Math.round(w * ratio);
+  canvas.height = Math.round(h * ratio);
+
+  ctx.setTransform(1, 0, 0, 1, 0, 0); // reset before scaling, avoids compounding
   ctx.scale(ratio, ratio);
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 2.2;
   ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
   ctx.strokeStyle = '#0b3d5c';
+
+  if(savedImage){
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, w, h);
+    img.src = savedImage;
+  }
 }
-window.addEventListener('resize', () => { const img = hasSig ? canvas.toDataURL() : null; resizeCanvas(); });
-resizeCanvas();
+
+// Run after layout is fully settled, not just on script execution
+window.addEventListener('load', setupCanvas);
+if(document.readyState === 'complete'){ setupCanvas(); }
+window.addEventListener('resize', () => {
+  savedImage = hasSig ? canvas.toDataURL('image/png') : null;
+  setupCanvas();
+});
 
 function getPos(e){
   const rect = canvas.getBoundingClientRect();
-  const p = e.touches ? e.touches[0] : e;
-  return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
 }
 function startDraw(e){
   drawing = true; hasSig = true;
   const pos = getPos(e);
   ctx.beginPath();
   ctx.moveTo(pos.x, pos.y);
+  ctx.lineTo(pos.x + 0.1, pos.y + 0.1); // ensures a dot shows even on a single tap/click
+  ctx.stroke();
+  try{ canvas.setPointerCapture(e.pointerId); }catch(err){}
   e.preventDefault();
 }
 function moveDraw(e){
@@ -504,19 +545,23 @@ function moveDraw(e){
   ctx.stroke();
   e.preventDefault();
 }
-function endDraw(){ drawing = false; }
+function endDraw(e){
+  if(!drawing) return;
+  drawing = false;
+  try{ canvas.releasePointerCapture(e.pointerId); }catch(err){}
+}
 
-canvas.addEventListener('mousedown', startDraw);
-canvas.addEventListener('mousemove', moveDraw);
-canvas.addEventListener('mouseup', endDraw);
-canvas.addEventListener('mouseleave', endDraw);
-canvas.addEventListener('touchstart', startDraw, {passive:false});
-canvas.addEventListener('touchmove', moveDraw, {passive:false});
-canvas.addEventListener('touchend', endDraw);
+canvas.addEventListener('pointerdown', startDraw);
+canvas.addEventListener('pointermove', moveDraw);
+canvas.addEventListener('pointerup', endDraw);
+canvas.addEventListener('pointercancel', endDraw);
+canvas.addEventListener('pointerleave', endDraw);
 
 function clearSig(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const rect = canvas.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
   hasSig = false;
+  savedImage = null;
 }
 
 /* ---------- Submit ---------- */
@@ -542,6 +587,11 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
   }
   if(!hasSig){
     msg.textContent = 'Tanda tangan belum diisi.';
+    msg.className = 'msg err'; msg.style.display='block';
+    return;
+  }
+  if(!sb){
+    msg.textContent = 'Koneksi database belum siap. Refresh halaman lalu coba lagi.';
     msg.className = 'msg err'; msg.style.display='block';
     return;
   }
@@ -588,6 +638,7 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
 
 /* ---------- Admin ---------- */
 let adminOk = false;
+let lastRekapData = [];
 function checkAdmin(){
   const val = document.getElementById('adminPass').value;
   const amsg = document.getElementById('adminMsg');
@@ -607,6 +658,11 @@ async function loadRekap(){
   const count = document.getElementById('rekapCount');
   list.innerHTML = '<div class="empty">Memuat...</div>';
 
+  if(!sb){
+    list.innerHTML = '<div class="empty">Koneksi database belum siap. Refresh halaman lalu coba lagi.</div>';
+    return;
+  }
+
   const { data, error } = await sb.from('psu_rekomendasi')
     .select('*')
     .order('created_at', { ascending: false });
@@ -617,6 +673,7 @@ async function loadRekap(){
   }
 
   count.textContent = `${data.length} rekomendasi tersimpan`;
+  lastRekapData = data;
 
   if(data.length === 0){
     list.innerHTML = '<div class="empty">Belum ada data masuk.</div>';
@@ -655,6 +712,42 @@ function escapeHtml(str){
   return str.replace(/[&<>"']/g, m => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[m]));
+}
+
+function csvEscape(val){
+  if(val === null || val === undefined) return '';
+  const s = String(val).replace(/"/g, '""');
+  return `"${s}"`;
+}
+
+function exportCsv(){
+  if(!lastRekapData || lastRekapData.length === 0){
+    alert('Belum ada data untuk di-export.');
+    return;
+  }
+  const headers = ['Tanggal','Nama Perumahan','Alamat','Nama Petugas','Jabatan','NIP','Unit Kerja','Hasil Penilaian','Kesimpulan','Syarat'];
+  const rows = lastRekapData.map(row => [
+    new Date(row.created_at).toLocaleString('id-ID'),
+    row.nama_perumahan,
+    row.alamat,
+    row.nama,
+    row.jabatan,
+    row.nip,
+    row.unit_kerja,
+    (row.hasil_penilaian || []).join(' | '),
+    row.kesimpulan,
+    row.syarat
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `rekap-psu-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 </script>
 </body>
