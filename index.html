@@ -575,6 +575,10 @@
       <div class="msg" id="adminMsg"></div>
     </div>
     <div id="adminContent" style="display:none;">
+      <div class="refresh-row" style="margin-bottom:4px;">
+        <span style="font-size:13px;color:var(--muted);">Masuk sebagai Admin</span>
+        <button type="button" onclick="logoutAdmin()">Keluar</button>
+      </div>
       <div class="card">
         <h2>Kelola Petugas (Tim Teknis Verifikasi PSU)</h2>
         <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Petugas yang ditambahkan di sini langsung tersimpan di database dan otomatis muncul di dropdown form semua orang.</p>
@@ -1275,23 +1279,49 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
 });
 
 /* ---------- Admin ---------- */
+const ADMIN_SESSION_KEY = 'psu_admin_logged_in';
 let adminOk = false;
 let lastRekapData = [];
+
+function showAdminContent(){
+  adminOk = true;
+  document.getElementById('adminGate').style.display = 'none';
+  document.getElementById('adminContent').style.display = 'block';
+  loadPerumahanList();
+  loadPetugas();
+  loadRekap();
+}
+
 function checkAdmin(){
   const val = document.getElementById('adminPass').value;
   const amsg = document.getElementById('adminMsg');
   if(val === ADMIN_PASSCODE){
-    adminOk = true;
-    document.getElementById('adminGate').style.display = 'none';
-    document.getElementById('adminContent').style.display = 'block';
-    loadPerumahanList();
-    loadPetugas();
-    loadRekap();
+    try{ localStorage.setItem(ADMIN_SESSION_KEY, '1'); }catch(e){ console.error(e); }
+    showAdminContent();
   } else {
     amsg.textContent = 'Passcode salah.';
     amsg.className = 'msg err'; amsg.style.display = 'block';
   }
 }
+
+function logoutAdmin(){
+  adminOk = false;
+  try{ localStorage.removeItem(ADMIN_SESSION_KEY); }catch(e){ console.error(e); }
+  document.getElementById('adminPass').value = '';
+  document.getElementById('adminMsg').style.display = 'none';
+  document.getElementById('adminContent').style.display = 'none';
+  document.getElementById('adminGate').style.display = 'block';
+}
+
+// Kalau sebelumnya sudah pernah login sukses di browser ini, tetap login
+// otomatis sampai admin klik "Keluar" (tidak perlu masukin passcode tiap buka halaman).
+(function restoreAdminSession(){
+  try{
+    if(localStorage.getItem(ADMIN_SESSION_KEY) === '1'){
+      showAdminContent();
+    }
+  }catch(e){ console.error(e); }
+})();
 
 async function loadRekap(){
   const list = document.getElementById('rekapList');
