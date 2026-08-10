@@ -57,34 +57,47 @@
      on psu_rekomendasi for delete
      using (true);
 
-4. Tabel psu_config dipakai untuk simpan "Data Umum" (Nama Perumahan, Alamat,
-   Nama Pengembang) yang sedang aktif. Admin isi sekali lewat tab Rekap Admin,
-   lalu semua orang yang buka form akan otomatis lihat data yang sama tanpa
-   perlu ketik ulang. Jalankan juga di SQL Editor:
+4. Tabel psu_perumahan dipakai untuk menyimpan Daftar Perumahan (tab Rekap
+   Admin -> "Data Perumahan"). Admin bisa tambah/edit/hapus perumahan, dan
+   mencentang satu perumahan sebagai "Nilai saat ini" (aktif). Data perumahan
+   yang sedang aktif itu otomatis muncul di form semua orang yang buka halaman
+   ini, tanpa perlu ketik ulang. Jalankan di SQL Editor:
 
-  create table psu_config (
-    id int primary key default 1,
-    nama_perumahan text,
+  create table psu_perumahan (
+    id uuid primary key default gen_random_uuid(),
+    nama_perumahan text not null,
     alamat text,
     nama_pengembang text,
-    updated_at timestamptz not null default now()
+    is_active boolean not null default false,
+    created_at timestamptz not null default now()
   );
 
-  insert into psu_config (id) values (1) on conflict do nothing;
-
-  alter table psu_config enable row level security;
+  alter table psu_perumahan enable row level security;
 
   create policy "allow read for all"
-    on psu_config for select
+    on psu_perumahan for select
     using (true);
 
+  create policy "allow insert for all"
+    on psu_perumahan for insert
+    with check (true);
+
   create policy "allow update for all"
-    on psu_config for update
+    on psu_perumahan for update
     using (true) with check (true);
 
-  create policy "allow insert for all"
-    on psu_config for insert
-    with check (true);
+  create policy "allow delete for all"
+    on psu_perumahan for delete
+    using (true);
+
+   KALAU SEBELUMNYA SUDAH PAKAI tabel psu_config (versi lama "Atur Data Umum
+   Aktif" satu-satu), jalankan ini juga supaya data lama tidak hilang, lalu
+   psu_config boleh dibiarkan / dihapus manual kalau mau:
+
+   insert into psu_perumahan (nama_perumahan, alamat, nama_pengembang, is_active)
+   select nama_perumahan, alamat, nama_pengembang, true
+   from psu_config
+   where id = 1 and nama_perumahan is not null and nama_perumahan <> '';
 
 5. Tabel psu_petugas dipakai untuk menyimpan Daftar Tim Teknis Verifikasi PSU.
    Admin bisa tambah/hapus petugas dari tab Rekap Admin, dan daftar ini otomatis
@@ -586,22 +599,30 @@
       </div>
 
       <div class="card">
-        <h2>Atur Data Umum Aktif</h2>
-        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Data ini otomatis muncul di form semua petugas. Ganti setiap kali mulai verifikasi perumahan baru.</p>
+        <h2>Data Perumahan</h2>
+        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Simpan daftar perumahan di sini. Centang "Nilai saat ini" pada perumahan yang mau diverifikasi sekarang — datanya otomatis muncul di form semua petugas.</p>
         <div class="field">
           <label>Nama Perumahan</label>
-          <input type="text" id="cfg_nama_perumahan">
+          <input type="text" id="ph_nama_perumahan">
         </div>
         <div class="field">
           <label>Alamat</label>
-          <textarea id="cfg_alamat" rows="2"></textarea>
+          <textarea id="ph_alamat" rows="2"></textarea>
         </div>
         <div class="field">
           <label>Nama Pengembang</label>
-          <input type="text" id="cfg_nama_pengembang">
+          <input type="text" id="ph_nama_pengembang">
         </div>
-        <button type="button" class="submit-btn" id="cfgSaveBtn" onclick="saveConfig()">Simpan Data Umum</button>
-        <div class="msg" id="cfgMsg"></div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:4px 0 14px;cursor:pointer;">
+          <input type="checkbox" id="ph_aktif" style="width:16px;height:16px;">
+          Nilai saat ini (jadi data aktif di form)
+        </label>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="submit-btn" id="phSaveBtn" onclick="savePerumahan()">+ Tambah Perumahan</button>
+          <button type="button" id="phCancelBtn" onclick="cancelEditPerumahan()" style="display:none;">Batal</button>
+        </div>
+        <div class="msg" id="phMsg"></div>
+        <div id="perumahanAdminList" style="margin-top:14px;"></div>
       </div>
 
       <div class="refresh-row">
@@ -859,10 +880,10 @@ setTanggalHariIni();
 async function loadConfig(){
   const hint = document.getElementById('dataUmumHint');
   if(!sb) return;
-  const { data, error } = await sb.from('psu_config').select('*').eq('id', 1).maybeSingle();
+  const { data, error } = await sb.from('psu_perumahan').select('*').eq('is_active', true).maybeSingle();
   if(error){
     console.error(error);
-    if(hint) hint.textContent = 'Gagal memuat Data Umum dari admin: ' + error.message;
+    if(hint) hint.textContent = 'Gagal memuat Data Perumahan dari admin: ' + error.message;
     return;
   }
   document.getElementById('f_nama_perumahan').value = data?.nama_perumahan || '';
@@ -871,52 +892,166 @@ async function loadConfig(){
   if(hint){
     hint.textContent = data?.nama_perumahan
       ? 'Data diisi otomatis oleh admin.'
-      : '';
+      : 'Admin belum memilih perumahan yang dinilai saat ini.';
   }
 }
 loadConfig();
 
-async function saveConfig(){
-  const msg = document.getElementById('cfgMsg');
-  const btn = document.getElementById('cfgSaveBtn');
+/* ---------- Data Perumahan (tab Admin) ---------- */
+let PERUMAHAN_LIST = [];
+let editingPerumahanId = null;
+
+async function loadPerumahanList(){
+  if(!sb) return;
+  const { data, error } = await sb.from('psu_perumahan').select('*').order('created_at', { ascending: false });
+  if(error){ console.error(error); return; }
+  PERUMAHAN_LIST = data || [];
+  renderPerumahanAdminList();
+}
+
+async function savePerumahan(){
+  const msg = document.getElementById('phMsg');
+  const btn = document.getElementById('phSaveBtn');
   msg.className = 'msg'; msg.style.display = 'none';
 
+  const nama_perumahan = document.getElementById('ph_nama_perumahan').value.trim();
+  if(!nama_perumahan){
+    msg.textContent = 'Nama Perumahan wajib diisi.';
+    msg.className = 'msg err'; msg.style.display = 'block';
+    return;
+  }
   if(!sb){
     msg.textContent = 'Koneksi database belum siap. Refresh halaman lalu coba lagi.';
     msg.className = 'msg err'; msg.style.display = 'block';
     return;
   }
 
+  const jadikanAktif = document.getElementById('ph_aktif').checked;
   const payload = {
-    id: 1,
-    nama_perumahan: document.getElementById('cfg_nama_perumahan').value.trim(),
-    alamat: document.getElementById('cfg_alamat').value.trim(),
-    nama_pengembang: document.getElementById('cfg_nama_pengembang').value.trim(),
-    updated_at: new Date().toISOString()
+    nama_perumahan,
+    alamat: document.getElementById('ph_alamat').value.trim(),
+    nama_pengembang: document.getElementById('ph_nama_pengembang').value.trim(),
+    is_active: jadikanAktif
   };
 
-  btn.disabled = true; btn.textContent = 'Menyimpan...';
-  const { error } = await sb.from('psu_config').upsert(payload);
-  btn.disabled = false; btn.textContent = 'Simpan Data Umum';
+  const isEdit = !!editingPerumahanId;
+  btn.disabled = true; btn.textContent = isEdit ? 'Menyimpan perubahan...' : 'Menyimpan...';
 
-  if(error){
-    console.error(error);
-    msg.textContent = 'Gagal menyimpan: ' + error.message;
-    msg.className = 'msg err'; msg.style.display = 'block';
+  let resultError = null;
+  let savedId = editingPerumahanId;
+  if(isEdit){
+    const { error } = await sb.from('psu_perumahan').update(payload).eq('id', editingPerumahanId);
+    resultError = error;
   } else {
-    msg.textContent = 'Data Umum tersimpan & langsung berlaku untuk semua petugas.';
+    const { data, error } = await sb.from('psu_perumahan').insert(payload).select('id').single();
+    resultError = error;
+    savedId = data?.id;
+  }
+
+  // Kalau ditandai aktif, pastikan cuma satu yang aktif (mutually exclusive)
+  if(!resultError && jadikanAktif && savedId){
+    const { error: unsetErr } = await sb.from('psu_perumahan').update({ is_active: false }).eq('is_active', true).neq('id', savedId);
+    if(unsetErr) console.error(unsetErr);
+  }
+
+  btn.disabled = false;
+
+  if(resultError){
+    console.error(resultError);
+    msg.textContent = 'Gagal menyimpan: ' + resultError.message;
+    msg.className = 'msg err'; msg.style.display = 'block';
+    btn.textContent = isEdit ? 'Simpan Perubahan' : '+ Tambah Perumahan';
+  } else {
+    msg.textContent = isEdit
+      ? 'Perubahan tersimpan & langsung sinkron ke form.'
+      : 'Perumahan ditambahkan.';
     msg.className = 'msg ok'; msg.style.display = 'block';
-    loadConfig(); // refresh form view juga
+    cancelEditPerumahan();
+    loadPerumahanList();
+    loadConfig();
   }
 }
 
-async function loadConfigIntoAdminForm(){
+function editPerumahan(id){
+  const p = PERUMAHAN_LIST.find(x => String(x.id) === String(id));
+  if(!p) return;
+  editingPerumahanId = p.id;
+  document.getElementById('ph_nama_perumahan').value = p.nama_perumahan || '';
+  document.getElementById('ph_alamat').value = p.alamat || '';
+  document.getElementById('ph_nama_pengembang').value = p.nama_pengembang || '';
+  document.getElementById('ph_aktif').checked = !!p.is_active;
+  document.getElementById('phSaveBtn').textContent = 'Simpan Perubahan';
+  document.getElementById('phCancelBtn').style.display = 'inline-block';
+  document.getElementById('phMsg').style.display = 'none';
+  document.getElementById('ph_nama_perumahan').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('ph_nama_perumahan').focus();
+  renderPerumahanAdminList();
+}
+
+function cancelEditPerumahan(){
+  editingPerumahanId = null;
+  document.getElementById('ph_nama_perumahan').value = '';
+  document.getElementById('ph_alamat').value = '';
+  document.getElementById('ph_nama_pengembang').value = '';
+  document.getElementById('ph_aktif').checked = false;
+  document.getElementById('phSaveBtn').textContent = '+ Tambah Perumahan';
+  document.getElementById('phCancelBtn').style.display = 'none';
+  renderPerumahanAdminList();
+}
+
+async function setActivePerumahan(id){
   if(!sb) return;
-  const { data, error } = await sb.from('psu_config').select('*').eq('id', 1).maybeSingle();
-  if(error){ console.error(error); return; }
-  document.getElementById('cfg_nama_perumahan').value = data?.nama_perumahan || '';
-  document.getElementById('cfg_alamat').value = data?.alamat || '';
-  document.getElementById('cfg_nama_pengembang').value = data?.nama_pengembang || '';
+  const { error: e1 } = await sb.from('psu_perumahan').update({ is_active: false }).neq('id', id);
+  const { error: e2 } = await sb.from('psu_perumahan').update({ is_active: true }).eq('id', id);
+  if(e1 || e2){
+    console.error(e1 || e2);
+    alert('Gagal mengubah status aktif: ' + ((e1 || e2).message));
+    return;
+  }
+  loadPerumahanList();
+  loadConfig();
+}
+
+async function deletePerumahan(id, nama){
+  if(!sb) return;
+  const ok = confirm(`Hapus perumahan "${nama}" dari daftar?`);
+  if(!ok) return;
+  const { error } = await sb.from('psu_perumahan').delete().eq('id', id);
+  if(error){
+    console.error(error);
+    alert('Gagal menghapus: ' + error.message);
+    return;
+  }
+  if(editingPerumahanId === id) cancelEditPerumahan();
+  loadPerumahanList();
+  loadConfig();
+}
+
+function renderPerumahanAdminList(){
+  const wrap = document.getElementById('perumahanAdminList');
+  if(!wrap) return;
+  if(!PERUMAHAN_LIST.length){
+    wrap.innerHTML = '<div class="empty">Belum ada perumahan.</div>';
+    return;
+  }
+  wrap.innerHTML = PERUMAHAN_LIST.map(p => `
+    <div class="rekap-item"${String(p.id) === String(editingPerumahanId) ? ' style="border-color:var(--gold);"' : ''}>
+      <div class="top">
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;">
+          <input type="radio" name="activePerumahan" style="margin-top:3px;width:16px;height:16px;flex:none;" ${p.is_active ? 'checked' : ''} onchange="setActivePerumahan('${p.id}')">
+          <span>
+            <strong>${escapeHtml(p.nama_perumahan)}</strong>${p.is_active ? ' <span class="badge setuju">Nilai saat ini</span>' : ''}<br>
+            <small>${p.alamat ? escapeHtml(p.alamat) : '-'}</small><br>
+            <small>${p.nama_pengembang ? 'Pengembang: ' + escapeHtml(p.nama_pengembang) : ''}</small>
+          </span>
+        </label>
+        <div style="display:flex;gap:6px;flex:none;">
+          <button type="button" onclick="editPerumahan('${p.id}')">Edit</button>
+          <button type="button" class="rm-btn" onclick="deletePerumahan('${p.id}', '${escapeHtml(p.nama_perumahan).replace(/'/g, "\\'")}')">&times;</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
 }
 
 /* ---------- Hasil Penilaian dynamic rows ---------- */
@@ -1121,7 +1256,7 @@ function checkAdmin(){
     adminOk = true;
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminContent').style.display = 'block';
-    loadConfigIntoAdminForm();
+    loadPerumahanList();
     loadPetugas();
     loadRekap();
   } else {
