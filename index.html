@@ -38,15 +38,23 @@
     on psu_rekomendasi for select
     using (true);
 
+  create policy "allow delete for all"
+    on psu_rekomendasi for delete
+    using (true);
+
 2. Isi SUPABASE_URL dan SUPABASE_ANON_KEY di bawah ini (Project Settings -> API).
 3. ADMIN_PASSCODE di bawah cuma pengaman ringan di sisi browser (bukan security
    sebenarnya) supaya rekap tidak sembarangan dibuka. Kalau butuh lebih aman,
    pasang RLS by auth atau passcode di edge function.
 
-   KALAU TABEL psu_rekomendasi SUDAH ADA SEBELUMNYA (belum ada kolom
-   nama_pengembang), cukup jalankan query tambahan ini di SQL Editor:
+   KALAU TABEL psu_rekomendasi SUDAH ADA SEBELUMNYA, jalankan query tambahan
+   ini di SQL Editor (aman dijalankan berkali-kali):
 
    alter table psu_rekomendasi add column if not exists nama_pengembang text;
+
+   create policy if not exists "allow delete for all"
+     on psu_rekomendasi for delete
+     using (true);
 =====================================================================
 -->
 
@@ -298,7 +306,7 @@
   .badge.syarat{background:#fef6e6;color:#8a6100;}
   .rekap-item ul{margin:6px 0;padding-left:18px;font-size:13px;}
   .rekap-item img{width:140px;border:1px solid var(--border);border-radius:6px;margin-top:6px;}
-  .rekap-actions{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);}
+  .rekap-actions{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;}
   .word-btn{
     background:var(--navy);
     color:#fff;
@@ -310,6 +318,17 @@
     cursor:pointer;
   }
   .word-btn:disabled{opacity:.6;cursor:default;}
+  .del-btn{
+    background:#fff;
+    color:var(--danger);
+    border:1px solid var(--danger);
+    border-radius:7px;
+    padding:8px 14px;
+    font-size:12.5px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .del-btn:disabled{opacity:.6;cursor:default;}
   .rekap-meta{font-size:12.5px;color:var(--muted);margin:2px 0;}
   .empty{text-align:center;color:var(--muted);font-size:13px;padding:30px 0;}
   .refresh-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
@@ -579,10 +598,10 @@ function setupCanvas(){
 
   ctx.setTransform(1, 0, 0, 1, 0, 0); // reset before scaling, avoids compounding
   ctx.scale(ratio, ratio);
-  ctx.lineWidth = 2.2;
+  ctx.lineWidth = 1.8;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#0b3d5c';
+  ctx.strokeStyle = '#111111';
 
   if(savedImage){
     const img = new Image();
@@ -782,6 +801,7 @@ async function loadRekap(){
         ${row.signature_data ? `<img src="${row.signature_data}" alt="tanda tangan">` : ''}
         <div class="rekap-actions">
           <button class="word-btn" onclick="exportWordRow(${idx})">Export Word</button>
+          <button class="del-btn" onclick="deleteRow(${idx})">Hapus</button>
         </div>
       </div>
     `;
@@ -793,6 +813,33 @@ function escapeHtml(str){
   return str.replace(/[&<>"']/g, m => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[m]));
+}
+
+async function deleteRow(idx){
+  const row = lastRekapData[idx];
+  if(!row) return;
+
+  const ok = confirm(`Hapus data rekomendasi untuk "${row.nama_perumahan}" dari ${row.nama}? Tindakan ini tidak bisa dibatalkan.`);
+  if(!ok) return;
+
+  if(!sb){
+    alert('Koneksi database belum siap. Refresh halaman lalu coba lagi.');
+    return;
+  }
+
+  const btn = document.querySelectorAll('.del-btn')[idx];
+  if(btn){ btn.disabled = true; btn.textContent = 'Menghapus...'; }
+
+  const { error } = await sb.from('psu_rekomendasi').delete().eq('id', row.id);
+
+  if(error){
+    console.error(error);
+    alert('Gagal menghapus: ' + error.message);
+    if(btn){ btn.disabled = false; btn.textContent = 'Hapus'; }
+    return;
+  }
+
+  loadRekap();
 }
 
 function dataUrlToUint8Array(dataUrl){
