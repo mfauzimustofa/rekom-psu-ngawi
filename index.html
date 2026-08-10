@@ -85,6 +85,40 @@
   create policy "allow insert for all"
     on psu_config for insert
     with check (true);
+
+5. Tabel psu_petugas dipakai untuk menyimpan Daftar Tim Teknis Verifikasi PSU.
+   Admin bisa tambah/hapus petugas dari tab Rekap Admin, dan daftar ini otomatis
+   sinkron ke dropdown "Nama (Tim Teknis Verifikasi PSU)" di form semua orang
+   yang buka halaman ini (karena sama-sama baca dari tabel ini). Jalankan juga
+   di SQL Editor:
+
+  create table psu_petugas (
+    id uuid primary key default gen_random_uuid(),
+    nama text not null,
+    jabatan text,
+    nip text,
+    unit_kerja text,
+    created_at timestamptz not null default now()
+  );
+
+  alter table psu_petugas enable row level security;
+
+  create policy "allow read for all"
+    on psu_petugas for select
+    using (true);
+
+  create policy "allow insert for all"
+    on psu_petugas for insert
+    with check (true);
+
+  create policy "allow delete for all"
+    on psu_petugas for delete
+    using (true);
+
+   Saat pertama kali dibuka dan tabel psu_petugas masih kosong, halaman ini
+   otomatis mengisi 6 petugas awal (Hari Siswanto dkk) supaya tidak perlu input
+   ulang manual. Sesudah itu semua tambah/hapus petugas dilakukan lewat tab
+   Rekap Admin dan langsung tersimpan di database.
 =====================================================================
 -->
 
@@ -491,6 +525,32 @@
     </div>
     <div id="adminContent" style="display:none;">
       <div class="card">
+        <h2>Kelola Petugas (Tim Teknis Verifikasi PSU)</h2>
+        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Petugas yang ditambahkan di sini langsung tersimpan di database dan otomatis muncul di dropdown form semua orang.</p>
+        <div class="field">
+          <label>Nama</label>
+          <input type="text" id="pt_nama" placeholder="Nama lengkap beserta gelar">
+        </div>
+        <div class="grid2">
+          <div class="field">
+            <label>Jabatan</label>
+            <input type="text" id="pt_jabatan">
+          </div>
+          <div class="field">
+            <label>NIP</label>
+            <input type="text" id="pt_nip">
+          </div>
+        </div>
+        <div class="field">
+          <label>Unit Kerja</label>
+          <input type="text" id="pt_unit_kerja">
+        </div>
+        <button type="button" class="submit-btn" id="ptSaveBtn" onclick="addPetugas()">+ Tambah Petugas</button>
+        <div class="msg" id="ptMsg"></div>
+        <div id="petugasAdminList" style="margin-top:14px;"></div>
+      </div>
+
+      <div class="card">
         <h2>Atur Data Umum Aktif</h2>
         <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Data ini otomatis muncul di form semua petugas. Ganti setiap kali mulai verifikasi perumahan baru.</p>
         <div class="field">
@@ -555,35 +615,68 @@ function switchTab(tab){
   document.getElementById('tabAdminBtn').classList.toggle('active', tab === 'admin');
 }
 
-/* ---------- Data Tim Teknis Verifikasi PSU ---------- */
-const TIM_PSU = [
-  { nama: 'Wahyudhi Puruhita, S.T., M.T.', nip: '', golongan: 'IV A', jabatan: 'Kepala Bidang Perumahan Rakyat pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Sekretaris' },
-  { nama: 'Hari Siswanto, S.T.', nip: '19741225 200312 1 007', golongan: 'IV C', jabatan: 'Auditor Ahli Madya', unit_kerja: 'Inspektorat', peran: 'Anggota' },
-  { nama: 'Akhmad Arwan Arifiyanto, S.E.', nip: '19740614 200312 1 004', golongan: 'IV A', jabatan: 'Kepala Bidang Pengelolaan Barang Milik Daerah', unit_kerja: 'Badan Keuangan', peran: 'Anggota' },
-  { nama: 'Faisal Arif, S.Tr', nip: '19940924 201503 1 001', golongan: 'III A', jabatan: 'Analis Survei Pengukuran dan Pemetaan', unit_kerja: 'Kantor Pertahan', peran: 'Anggota' },
-  { nama: 'Hendri Prasetyawan, S.Hut', nip: '19811110 200901 1 011', golongan: 'III D', jabatan: 'Perencana Ahli Muda', unit_kerja: 'Badan Perencanaan Pembangunan Daerah', peran: 'Anggota' },
-  { nama: 'Etiek Eka Widaryanti, S.T.', nip: '', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
-  { nama: 'Tri Wahyuni, S.T.', nip: '', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
-  { nama: 'Pratiwi Kusuma Ningrum, S.T., M.Si', nip: '', golongan: 'III D', jabatan: 'Penata Ruang Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
-  { nama: 'Arin Royanto, S.STP', nip: '19820517 200012 1 001', golongan: 'IV B', jabatan: 'Camat Ngawi', unit_kerja: 'Camat Ngawi', peran: 'Anggota' },
-  { nama: 'Andri Wika Cahyono', nip: '', golongan: '', jabatan: 'Kepala Desa Jururejo', unit_kerja: 'Desa Jururejo', peran: 'Anggota' },
-  { nama: 'Hermanto Alfin Cahyono, S.E.', nip: '19860525 201001 1 023', golongan: '', jabatan: 'Lurah Margomulyo Kec. Ngawi', unit_kerja: 'Lurah Margomulyo', peran: 'Anggota' }
+/* ---------- Data Tim Teknis Verifikasi PSU (sinkron dari database) ---------- */
+// Dipakai HANYA untuk mengisi otomatis tabel psu_petugas saat masih kosong
+// (pertama kali dipakai). Setelah itu, semua tambah/hapus petugas lewat
+// tab Admin dan tersimpan permanen di Supabase.
+const DEFAULT_PETUGAS = [
+  { nama: 'Hari Siswanto, S.T.', nip: '19741225 200312 1 007', jabatan: 'Auditor Ahli Madya', unit_kerja: 'Inspektorat' },
+  { nama: 'Akhmad Arwan Arifiyanto, S.E.', nip: '19740614 200312 1 004', jabatan: 'Kepala Bidang Pengelolaan Barang Milik Daerah', unit_kerja: 'Badan Keuangan' },
+  { nama: 'Faisal Arif, S.Tr', nip: '19940924 201503 1 001', jabatan: 'Analis Survei Pengukuran dan Pemetaan', unit_kerja: 'Kantor Pertahan' },
+  { nama: 'Hendri Prasetyawan, S.Hut', nip: '19811110 200901 1 011', jabatan: 'Perencana Ahli Muda', unit_kerja: 'Badan Perencanaan Pembangunan Daerah' },
+  { nama: 'Arin Royanto, S.STP', nip: '19820517 200012 1 001', jabatan: 'Camat Ngawi', unit_kerja: 'Camat Ngawi' },
+  { nama: 'Hermanto Alfin Cahyono, S.E.', nip: '19860525 201001 1 023', jabatan: 'Lurah Margomulyo Kec. Ngawi', unit_kerja: 'Lurah Margomulyo' }
 ];
+
+let PETUGAS_LIST = [];
+
+async function loadPetugas(){
+  if(!sb){
+    PETUGAS_LIST = DEFAULT_PETUGAS.map((p, i) => ({ ...p, id: 'local-' + i }));
+    populateTimSelect();
+    renderPetugasAdminList();
+    return;
+  }
+  let { data, error } = await sb.from('psu_petugas').select('*').order('nama', { ascending: true });
+  if(error){
+    console.error(error);
+    PETUGAS_LIST = DEFAULT_PETUGAS.map((p, i) => ({ ...p, id: 'local-' + i }));
+    populateTimSelect();
+    renderPetugasAdminList();
+    return;
+  }
+  if(!data || data.length === 0){
+    // Tabel masih kosong -> isi otomatis dengan daftar awal, lalu ambil ulang dari DB
+    const { error: seedErr } = await sb.from('psu_petugas').insert(DEFAULT_PETUGAS);
+    if(!seedErr){
+      const reload = await sb.from('psu_petugas').select('*').order('nama', { ascending: true });
+      data = reload.data || [];
+    } else {
+      console.error(seedErr);
+      data = DEFAULT_PETUGAS.map((p, i) => ({ ...p, id: 'local-' + i }));
+    }
+  }
+  PETUGAS_LIST = data;
+  populateTimSelect();
+  renderPetugasAdminList();
+}
 
 function populateTimSelect(){
   const sel = document.getElementById('timSelect');
-  TIM_PSU.forEach((t, i) => {
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih dari Tim Teknis --</option>';
+  PETUGAS_LIST.forEach((t) => {
     const opt = document.createElement('option');
-    opt.value = i;
-    opt.textContent = `${t.nama} — ${t.peran}`;
+    opt.value = t.id;
+    opt.textContent = t.jabatan ? `${t.nama} — ${t.jabatan}` : t.nama;
     sel.appendChild(opt);
   });
   const other = document.createElement('option');
   other.value = 'lain';
   other.textContent = '-- Lainnya (isi manual) --';
   sel.appendChild(other);
+  if(currentVal && [...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
 }
-populateTimSelect();
 
 function applyTimSelection(){
   const sel = document.getElementById('timSelect');
@@ -597,11 +690,90 @@ function applyTimSelection(){
     }
     return;
   }
-  const t = TIM_PSU[parseInt(sel.value, 10)];
+  const t = PETUGAS_LIST.find(p => String(p.id) === sel.value);
+  if(!t) return;
   document.getElementById('f_nama').value = t.nama;
-  document.getElementById('f_jabatan').value = t.jabatan + (t.golongan ? ` (Gol. ${t.golongan})` : '');
+  document.getElementById('f_jabatan').value = t.jabatan || '';
   document.getElementById('f_nip').value = t.nip || '';
-  document.getElementById('f_unit_kerja').value = `${t.peran} Tim Teknis Verifikasi PSU`;
+  document.getElementById('f_unit_kerja').value = t.unit_kerja || '';
+}
+loadPetugas();
+
+/* ---------- Kelola Petugas (tab Admin) ---------- */
+async function addPetugas(){
+  const msg = document.getElementById('ptMsg');
+  const btn = document.getElementById('ptSaveBtn');
+  msg.className = 'msg'; msg.style.display = 'none';
+
+  const nama = document.getElementById('pt_nama').value.trim();
+  if(!nama){
+    msg.textContent = 'Nama wajib diisi.';
+    msg.className = 'msg err'; msg.style.display = 'block';
+    return;
+  }
+  if(!sb){
+    msg.textContent = 'Koneksi database belum siap. Refresh halaman lalu coba lagi.';
+    msg.className = 'msg err'; msg.style.display = 'block';
+    return;
+  }
+
+  const payload = {
+    nama,
+    jabatan: document.getElementById('pt_jabatan').value.trim(),
+    nip: document.getElementById('pt_nip').value.trim(),
+    unit_kerja: document.getElementById('pt_unit_kerja').value.trim()
+  };
+
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+  const { error } = await sb.from('psu_petugas').insert(payload);
+  btn.disabled = false; btn.textContent = '+ Tambah Petugas';
+
+  if(error){
+    console.error(error);
+    msg.textContent = 'Gagal menyimpan: ' + error.message;
+    msg.className = 'msg err'; msg.style.display = 'block';
+  } else {
+    msg.textContent = 'Petugas ditambahkan & langsung tersedia di dropdown form.';
+    msg.className = 'msg ok'; msg.style.display = 'block';
+    document.getElementById('pt_nama').value = '';
+    document.getElementById('pt_jabatan').value = '';
+    document.getElementById('pt_nip').value = '';
+    document.getElementById('pt_unit_kerja').value = '';
+    loadPetugas();
+  }
+}
+
+async function deletePetugas(id, nama){
+  if(!sb) return;
+  const ok = confirm(`Hapus petugas "${nama}" dari daftar?`);
+  if(!ok) return;
+  const { error } = await sb.from('psu_petugas').delete().eq('id', id);
+  if(error){
+    console.error(error);
+    alert('Gagal menghapus: ' + error.message);
+    return;
+  }
+  loadPetugas();
+}
+
+function renderPetugasAdminList(){
+  const wrap = document.getElementById('petugasAdminList');
+  if(!wrap) return;
+  if(!PETUGAS_LIST.length){
+    wrap.innerHTML = '<div class="empty">Belum ada petugas.</div>';
+    return;
+  }
+  wrap.innerHTML = PETUGAS_LIST.map(t => `
+    <div class="rekap-item">
+      <div class="top">
+        <div>
+          <strong>${escapeHtml(t.nama)}</strong><br>
+          <small>${escapeHtml(t.jabatan || '-')}${t.unit_kerja ? ' — ' + escapeHtml(t.unit_kerja) : ''}${t.nip ? ' — NIP ' + escapeHtml(t.nip) : ''}</small>
+        </div>
+        <button type="button" class="rm-btn" onclick="deletePetugas('${t.id}', '${escapeHtml(t.nama).replace(/'/g, "\\'")}')">&times;</button>
+      </div>
+    </div>
+  `).join('');
 }
 
 /* ---------- Data Umum (shared, diatur admin) ---------- */
@@ -877,6 +1049,7 @@ function checkAdmin(){
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminContent').style.display = 'block';
     loadConfigIntoAdminForm();
+    loadPetugas();
     loadRekap();
   } else {
     amsg.textContent = 'Passcode salah.';
