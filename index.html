@@ -503,6 +503,12 @@
         <h2>Data Umum</h2>
         <p id="dataUmumHint" style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Data diisi otomatis oleh admin.</p>
         <div class="field">
+          <label>Pilih Perumahan yang Dinilai</label>
+          <select id="f_perumahan_select" onchange="applyPerumahanSelection()">
+            <option value="">-- Pilih Perumahan --</option>
+          </select>
+        </div>
+        <div class="field">
           <label>Nama Perumahan</label>
           <input type="text" id="f_nama_perumahan" required readonly>
         </div>
@@ -600,7 +606,7 @@
 
       <div class="card">
         <h2>Data Perumahan</h2>
-        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Simpan daftar perumahan di sini. Centang "Nilai saat ini" pada perumahan yang mau diverifikasi sekarang — datanya otomatis muncul di form semua petugas.</p>
+        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Simpan daftar perumahan di sini. Centang "Sedang dinilai" pada satu atau lebih perumahan yang sedang diverifikasi — daftarnya otomatis muncul sebagai pilihan dropdown di form semua petugas.</p>
         <div class="field">
           <label>Nama Perumahan</label>
           <input type="text" id="ph_nama_perumahan">
@@ -615,7 +621,7 @@
         </div>
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin:4px 0 14px;cursor:pointer;">
           <input type="checkbox" id="ph_aktif" style="width:16px;height:16px;">
-          Nilai saat ini (jadi data aktif di form)
+          Sedang dinilai (tampil di dropdown pilihan form petugas)
         </label>
         <div style="display:flex;gap:8px;">
           <button type="button" class="submit-btn" id="phSaveBtn" onclick="savePerumahan()">+ Tambah Perumahan</button>
@@ -877,25 +883,56 @@ function setTanggalHariIni(){
 }
 setTanggalHariIni();
 
+let PERUMAHAN_AKTIF_LIST = [];
+
 async function loadConfig(){
   const hint = document.getElementById('dataUmumHint');
+  const sel = document.getElementById('f_perumahan_select');
   if(!sb) return;
-  const { data, error } = await sb.from('psu_perumahan').select('*').eq('is_active', true).maybeSingle();
+  const { data, error } = await sb.from('psu_perumahan').select('*').eq('is_active', true).order('nama_perumahan', { ascending: true });
   if(error){
     console.error(error);
     if(hint) hint.textContent = 'Gagal memuat Data Perumahan dari admin: ' + error.message;
     return;
   }
-  document.getElementById('f_nama_perumahan').value = data?.nama_perumahan || '';
-  document.getElementById('f_alamat').value = data?.alamat || '';
-  document.getElementById('f_nama_pengembang').value = data?.nama_pengembang || '';
+  PERUMAHAN_AKTIF_LIST = data || [];
+
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="">-- Pilih Perumahan --</option>';
+  PERUMAHAN_AKTIF_LIST.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.nama_perumahan;
+    sel.appendChild(opt);
+  });
+  if(currentVal && [...sel.options].some(o => o.value === currentVal)){
+    sel.value = currentVal;
+  } else if(PERUMAHAN_AKTIF_LIST.length === 1){
+    // kalau cuma ada 1 perumahan yang sedang dinilai, langsung pilihkan otomatis
+    sel.value = PERUMAHAN_AKTIF_LIST[0].id;
+  } else {
+    sel.value = '';
+    document.getElementById('f_nama_perumahan').value = '';
+    document.getElementById('f_alamat').value = '';
+    document.getElementById('f_nama_pengembang').value = '';
+  }
+  applyPerumahanSelection();
+
   if(hint){
-    hint.textContent = data?.nama_perumahan
-      ? 'Data diisi otomatis oleh admin.'
-      : 'Admin belum memilih perumahan yang dinilai saat ini.';
+    hint.textContent = PERUMAHAN_AKTIF_LIST.length
+      ? 'Pilih perumahan di atas, data alamat & pengembang otomatis terisi.'
+      : 'Admin belum menandai perumahan yang sedang dinilai.';
   }
 }
 loadConfig();
+
+function applyPerumahanSelection(){
+  const sel = document.getElementById('f_perumahan_select');
+  const p = PERUMAHAN_AKTIF_LIST.find(x => String(x.id) === sel.value);
+  document.getElementById('f_nama_perumahan').value = p?.nama_perumahan || '';
+  document.getElementById('f_alamat').value = p?.alamat || '';
+  document.getElementById('f_nama_pengembang').value = p?.nama_pengembang || '';
+}
 
 /* ---------- Data Perumahan (tab Admin) ---------- */
 let PERUMAHAN_LIST = [];
@@ -938,20 +975,12 @@ async function savePerumahan(){
   btn.disabled = true; btn.textContent = isEdit ? 'Menyimpan perubahan...' : 'Menyimpan...';
 
   let resultError = null;
-  let savedId = editingPerumahanId;
   if(isEdit){
     const { error } = await sb.from('psu_perumahan').update(payload).eq('id', editingPerumahanId);
     resultError = error;
   } else {
-    const { data, error } = await sb.from('psu_perumahan').insert(payload).select('id').single();
+    const { error } = await sb.from('psu_perumahan').insert(payload);
     resultError = error;
-    savedId = data?.id;
-  }
-
-  // Kalau ditandai aktif, pastikan cuma satu yang aktif (mutually exclusive)
-  if(!resultError && jadikanAktif && savedId){
-    const { error: unsetErr } = await sb.from('psu_perumahan').update({ is_active: false }).eq('is_active', true).neq('id', savedId);
-    if(unsetErr) console.error(unsetErr);
   }
 
   btn.disabled = false;
@@ -999,13 +1028,12 @@ function cancelEditPerumahan(){
   renderPerumahanAdminList();
 }
 
-async function setActivePerumahan(id){
+async function toggleActivePerumahan(id, checked){
   if(!sb) return;
-  const { error: e1 } = await sb.from('psu_perumahan').update({ is_active: false }).neq('id', id);
-  const { error: e2 } = await sb.from('psu_perumahan').update({ is_active: true }).eq('id', id);
-  if(e1 || e2){
-    console.error(e1 || e2);
-    alert('Gagal mengubah status aktif: ' + ((e1 || e2).message));
+  const { error } = await sb.from('psu_perumahan').update({ is_active: checked }).eq('id', id);
+  if(error){
+    console.error(error);
+    alert('Gagal mengubah status: ' + error.message);
     return;
   }
   loadPerumahanList();
@@ -1038,9 +1066,9 @@ function renderPerumahanAdminList(){
     <div class="rekap-item"${String(p.id) === String(editingPerumahanId) ? ' style="border-color:var(--gold);"' : ''}>
       <div class="top">
         <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;flex:1;">
-          <input type="radio" name="activePerumahan" style="margin-top:3px;width:16px;height:16px;flex:none;" ${p.is_active ? 'checked' : ''} onchange="setActivePerumahan('${p.id}')">
+          <input type="checkbox" style="margin-top:3px;width:16px;height:16px;flex:none;" ${p.is_active ? 'checked' : ''} onchange="toggleActivePerumahan('${p.id}', this.checked)">
           <span>
-            <strong>${escapeHtml(p.nama_perumahan)}</strong>${p.is_active ? ' <span class="badge setuju">Nilai saat ini</span>' : ''}<br>
+            <strong>${escapeHtml(p.nama_perumahan)}</strong>${p.is_active ? ' <span class="badge setuju">Sedang Dinilai</span>' : ''}<br>
             <small>${p.alamat ? escapeHtml(p.alamat) : '-'}</small><br>
             <small>${p.nama_pengembang ? 'Pengembang: ' + escapeHtml(p.nama_pengembang) : ''}</small>
           </span>
