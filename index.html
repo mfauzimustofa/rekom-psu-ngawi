@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Rekomendasi Tim Verifikasi PSU</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='16' fill='%230b3d5c'/%3E%3Ctext x='50' y='68' font-size='55' text-anchor='middle' fill='%23c99a2e' font-family='Arial'%3EP%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="logo-ngawi.svg">
 
 <!--
 =====================================================================
@@ -111,9 +111,21 @@
     on psu_petugas for insert
     with check (true);
 
+  create policy "allow update for all"
+    on psu_petugas for update
+    using (true) with check (true);
+
   create policy "allow delete for all"
     on psu_petugas for delete
     using (true);
+
+   Kalau tabel psu_petugas SUDAH ADA SEBELUMNYA (dibuat sebelum fitur edit ini),
+   jalankan tambahan ini saja di SQL Editor (aman dijalankan berkali-kali):
+
+   drop policy if exists "allow update for all" on psu_petugas;
+   create policy "allow update for all"
+     on psu_petugas for update
+     using (true) with check (true);
 
    Saat pertama kali dibuka dan tabel psu_petugas masih kosong, halaman ini
    otomatis mengisi 6 petugas awal (Hari Siswanto dkk) supaya tidak perlu input
@@ -148,6 +160,21 @@
     color:#fff;
     padding:22px 16px 20px;
     text-align:center;
+  }
+  header .header-inner{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    max-width:640px;
+    margin:0 auto;
+    text-align:left;
+  }
+  header .logo{
+    width:52px;
+    height:52px;
+    flex:none;
+    object-fit:contain;
+    filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));
   }
   header h1{
     font-size:16px;
@@ -410,8 +437,13 @@
 <body>
 
 <header>
-  <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h1>
-  <p>Kabupaten Ngawi</p>
+  <div class="header-inner">
+    <img src="logo-ngawi.svg" alt="Lambang Kabupaten Ngawi" class="logo">
+    <div>
+      <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h1>
+      <p>Kabupaten Ngawi</p>
+    </div>
+  </div>
 </header>
 
 <div class="tabs">
@@ -545,7 +577,10 @@
           <label>Unit Kerja</label>
           <input type="text" id="pt_unit_kerja">
         </div>
-        <button type="button" class="submit-btn" id="ptSaveBtn" onclick="addPetugas()">+ Tambah Petugas</button>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="submit-btn" id="ptSaveBtn" onclick="savePetugas()">+ Tambah Petugas</button>
+          <button type="button" id="ptCancelBtn" onclick="cancelEditPetugas()" style="display:none;">Batal</button>
+        </div>
         <div class="msg" id="ptMsg"></div>
         <div id="petugasAdminList" style="margin-top:14px;"></div>
       </div>
@@ -700,7 +735,9 @@ function applyTimSelection(){
 loadPetugas();
 
 /* ---------- Kelola Petugas (tab Admin) ---------- */
-async function addPetugas(){
+let editingPetugasId = null;
+
+async function savePetugas(){
   const msg = document.getElementById('ptMsg');
   const btn = document.getElementById('ptSaveBtn');
   msg.className = 'msg'; msg.style.display = 'none';
@@ -724,23 +761,55 @@ async function addPetugas(){
     unit_kerja: document.getElementById('pt_unit_kerja').value.trim()
   };
 
-  btn.disabled = true; btn.textContent = 'Menyimpan...';
-  const { error } = await sb.from('psu_petugas').insert(payload);
-  btn.disabled = false; btn.textContent = '+ Tambah Petugas';
+  const isEdit = !!editingPetugasId;
+  btn.disabled = true; btn.textContent = isEdit ? 'Menyimpan perubahan...' : 'Menyimpan...';
+
+  const { error } = isEdit
+    ? await sb.from('psu_petugas').update(payload).eq('id', editingPetugasId)
+    : await sb.from('psu_petugas').insert(payload);
+
+  btn.disabled = false;
 
   if(error){
     console.error(error);
     msg.textContent = 'Gagal menyimpan: ' + error.message;
     msg.className = 'msg err'; msg.style.display = 'block';
+    btn.textContent = isEdit ? 'Simpan Perubahan' : '+ Tambah Petugas';
   } else {
-    msg.textContent = 'Petugas ditambahkan & langsung tersedia di dropdown form.';
+    msg.textContent = isEdit
+      ? 'Perubahan tersimpan & langsung sinkron ke dropdown form.'
+      : 'Petugas ditambahkan & langsung tersedia di dropdown form.';
     msg.className = 'msg ok'; msg.style.display = 'block';
-    document.getElementById('pt_nama').value = '';
-    document.getElementById('pt_jabatan').value = '';
-    document.getElementById('pt_nip').value = '';
-    document.getElementById('pt_unit_kerja').value = '';
+    cancelEditPetugas();
     loadPetugas();
   }
+}
+
+function editPetugas(id){
+  const t = PETUGAS_LIST.find(p => String(p.id) === String(id));
+  if(!t) return;
+  editingPetugasId = t.id;
+  document.getElementById('pt_nama').value = t.nama || '';
+  document.getElementById('pt_jabatan').value = t.jabatan || '';
+  document.getElementById('pt_nip').value = t.nip || '';
+  document.getElementById('pt_unit_kerja').value = t.unit_kerja || '';
+  document.getElementById('ptSaveBtn').textContent = 'Simpan Perubahan';
+  document.getElementById('ptCancelBtn').style.display = 'inline-block';
+  document.getElementById('ptMsg').style.display = 'none';
+  document.getElementById('pt_nama').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('pt_nama').focus();
+  renderPetugasAdminList();
+}
+
+function cancelEditPetugas(){
+  editingPetugasId = null;
+  document.getElementById('pt_nama').value = '';
+  document.getElementById('pt_jabatan').value = '';
+  document.getElementById('pt_nip').value = '';
+  document.getElementById('pt_unit_kerja').value = '';
+  document.getElementById('ptSaveBtn').textContent = '+ Tambah Petugas';
+  document.getElementById('ptCancelBtn').style.display = 'none';
+  renderPetugasAdminList();
 }
 
 async function deletePetugas(id, nama){
@@ -753,6 +822,7 @@ async function deletePetugas(id, nama){
     alert('Gagal menghapus: ' + error.message);
     return;
   }
+  if(editingPetugasId === id) cancelEditPetugas();
   loadPetugas();
 }
 
@@ -764,13 +834,16 @@ function renderPetugasAdminList(){
     return;
   }
   wrap.innerHTML = PETUGAS_LIST.map(t => `
-    <div class="rekap-item">
+    <div class="rekap-item"${String(t.id) === String(editingPetugasId) ? ' style="border-color:var(--gold);"' : ''}>
       <div class="top">
         <div>
           <strong>${escapeHtml(t.nama)}</strong><br>
           <small>${escapeHtml(t.jabatan || '-')}${t.unit_kerja ? ' — ' + escapeHtml(t.unit_kerja) : ''}${t.nip ? ' — NIP ' + escapeHtml(t.nip) : ''}</small>
         </div>
-        <button type="button" class="rm-btn" onclick="deletePetugas('${t.id}', '${escapeHtml(t.nama).replace(/'/g, "\\'")}')">&times;</button>
+        <div style="display:flex;gap:6px;flex:none;">
+          <button type="button" onclick="editPetugas('${t.id}')">Edit</button>
+          <button type="button" class="rm-btn" onclick="deletePetugas('${t.id}', '${escapeHtml(t.nama).replace(/'/g, "\\'")}')">&times;</button>
+        </div>
       </div>
     </div>
   `).join('');
