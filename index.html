@@ -422,7 +422,7 @@
 
       <div class="card">
         <h2>Data Umum</h2>
-        <p id="dataUmumHint" style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Diisi otomatis oleh admin. Kalau kosong / belum sesuai, hubungi admin.</p>
+        <p id="dataUmumHint" style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Data diisi otomatis oleh admin.</p>
         <div class="field">
           <label>Nama Perumahan</label>
           <input type="text" id="f_nama_perumahan" required readonly>
@@ -625,8 +625,8 @@ async function loadConfig(){
   document.getElementById('f_nama_pengembang').value = data?.nama_pengembang || '';
   if(hint){
     hint.textContent = data?.nama_perumahan
-      ? 'Diisi otomatis oleh admin. Kalau kosong / belum sesuai, hubungi admin.'
-      : 'Belum diisi admin. Hubungi admin untuk mengisi Data Umum lebih dulu.';
+      ? 'Data diisi otomatis oleh admin.'
+      : '';
   }
 }
 loadConfig();
