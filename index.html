@@ -52,7 +52,8 @@
 
    alter table psu_rekomendasi add column if not exists nama_pengembang text;
 
-   create policy if not exists "allow delete for all"
+   drop policy if exists "allow delete for all" on psu_rekomendasi;
+   create policy "allow delete for all"
      on psu_rekomendasi for delete
      using (true);
 =====================================================================
