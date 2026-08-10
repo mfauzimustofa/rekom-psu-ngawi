@@ -56,6 +56,35 @@
    create policy "allow delete for all"
      on psu_rekomendasi for delete
      using (true);
+
+4. Tabel psu_config dipakai untuk simpan "Data Umum" (Nama Perumahan, Alamat,
+   Nama Pengembang) yang sedang aktif. Admin isi sekali lewat tab Rekap Admin,
+   lalu semua orang yang buka form akan otomatis lihat data yang sama tanpa
+   perlu ketik ulang. Jalankan juga di SQL Editor:
+
+  create table psu_config (
+    id int primary key default 1,
+    nama_perumahan text,
+    alamat text,
+    nama_pengembang text,
+    updated_at timestamptz not null default now()
+  );
+
+  insert into psu_config (id) values (1) on conflict do nothing;
+
+  alter table psu_config enable row level security;
+
+  create policy "allow read for all"
+    on psu_config for select
+    using (true);
+
+  create policy "allow update for all"
+    on psu_config for update
+    using (true) with check (true);
+
+  create policy "allow insert for all"
+    on psu_config for insert
+    with check (true);
 =====================================================================
 -->
 
@@ -164,6 +193,11 @@
     outline:none;
     border-color:var(--navy);
     background:#fff;
+  }
+  input[readonly], textarea[readonly]{
+    background:#eef1f4;
+    color:var(--muted);
+    cursor:default;
   }
   textarea{resize:vertical;min-height:60px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
@@ -388,17 +422,22 @@
 
       <div class="card">
         <h2>Data Umum</h2>
+        <p id="dataUmumHint" style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Diisi otomatis oleh admin. Kalau kosong / belum sesuai, hubungi admin.</p>
         <div class="field">
           <label>Nama Perumahan</label>
-          <input type="text" id="f_nama_perumahan" required>
+          <input type="text" id="f_nama_perumahan" required readonly>
         </div>
         <div class="field">
           <label>Alamat</label>
-          <textarea id="f_alamat" rows="2"></textarea>
+          <textarea id="f_alamat" rows="2" readonly></textarea>
         </div>
         <div class="field">
           <label>Nama Pengembang</label>
-          <input type="text" id="f_nama_pengembang">
+          <input type="text" id="f_nama_pengembang" readonly>
+        </div>
+        <div class="field">
+          <label>Tanggal</label>
+          <input type="text" id="f_tanggal" readonly>
         </div>
       </div>
 
@@ -451,6 +490,25 @@
       <div class="msg" id="adminMsg"></div>
     </div>
     <div id="adminContent" style="display:none;">
+      <div class="card">
+        <h2>Atur Data Umum Aktif</h2>
+        <p style="margin:-4px 0 12px;font-size:12px;color:var(--muted);">Data ini otomatis muncul di form semua petugas. Ganti setiap kali mulai verifikasi perumahan baru.</p>
+        <div class="field">
+          <label>Nama Perumahan</label>
+          <input type="text" id="cfg_nama_perumahan">
+        </div>
+        <div class="field">
+          <label>Alamat</label>
+          <textarea id="cfg_alamat" rows="2"></textarea>
+        </div>
+        <div class="field">
+          <label>Nama Pengembang</label>
+          <input type="text" id="cfg_nama_pengembang">
+        </div>
+        <button type="button" class="submit-btn" id="cfgSaveBtn" onclick="saveConfig()">Simpan Data Umum</button>
+        <div class="msg" id="cfgMsg"></div>
+      </div>
+
       <div class="refresh-row">
         <span style="font-size:13px;color:var(--muted);" id="rekapCount"></span>
         <div style="display:flex;gap:8px;">
@@ -499,16 +557,17 @@ function switchTab(tab){
 
 /* ---------- Data Tim Teknis Verifikasi PSU ---------- */
 const TIM_PSU = [
-  { nama: 'Wahyudhi Puruhita, S.T., M.T.', golongan: 'IV A', jabatan: 'Kepala Bidang Perumahan Rakyat pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Sekretaris' },
-  { nama: 'Hari Siswanto, S.T.', golongan: 'IV C', jabatan: 'Pengawas Penyelenggaraan Urusan Pemerintahan Daerah (PPUPD) Auditor Ahli Madya di Inspektorat Ngawi', peran: 'Anggota' },
-  { nama: 'Akhmad Arwan Arifiyanto, S.E.', golongan: 'IV A', jabatan: 'Kepala Bidang Pengelolaan Barang Milik Daerah pada Badan Keuangan Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Faisal Arif, S.Tr', golongan: 'III A', jabatan: 'Analisis Survey Pengukuran dan Pemetaan pada Kantor Pertanahan Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Hendri Prasetyawan, S.Hut', golongan: 'III D', jabatan: 'Perencana Ahli Muda pada Badan Perencanaan Pembangunan Daerah Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Etiek Eka Widaryanti, S.T.', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Tri Wahyuni, S.T.', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Pratiwi Kusuma Ningrum, S.T., M.Si', golongan: 'III D', jabatan: 'Penata Ruang Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
-  { nama: 'Arin Royanto, S.STP', golongan: 'IV B', jabatan: 'Camat Ngawi', peran: 'Anggota' },
-  { nama: 'Andri Wika Cahyono', golongan: '', jabatan: 'Kepala Desa Jururejo', peran: 'Anggota' }
+  { nama: 'Wahyudhi Puruhita, S.T., M.T.', nip: '', golongan: 'IV A', jabatan: 'Kepala Bidang Perumahan Rakyat pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Sekretaris' },
+  { nama: 'Hari Siswanto, S.T.', nip: '19741225 200312 1 007', golongan: 'IV C', jabatan: 'Auditor Ahli Madya', unit_kerja: 'Inspektorat', peran: 'Anggota' },
+  { nama: 'Akhmad Arwan Arifiyanto, S.E.', nip: '19740614 200312 1 004', golongan: 'IV A', jabatan: 'Kepala Bidang Pengelolaan Barang Milik Daerah', unit_kerja: 'Badan Keuangan', peran: 'Anggota' },
+  { nama: 'Faisal Arif, S.Tr', nip: '19940924 201503 1 001', golongan: 'III A', jabatan: 'Analis Survei Pengukuran dan Pemetaan', unit_kerja: 'Kantor Pertahan', peran: 'Anggota' },
+  { nama: 'Hendri Prasetyawan, S.Hut', nip: '19811110 200901 1 011', golongan: 'III D', jabatan: 'Perencana Ahli Muda', unit_kerja: 'Badan Perencanaan Pembangunan Daerah', peran: 'Anggota' },
+  { nama: 'Etiek Eka Widaryanti, S.T.', nip: '', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
+  { nama: 'Tri Wahyuni, S.T.', nip: '', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
+  { nama: 'Pratiwi Kusuma Ningrum, S.T., M.Si', nip: '', golongan: 'III D', jabatan: 'Penata Ruang Ahli Muda', unit_kerja: 'Dinas Perumahan Rakyat dan Kawasan Permukiman', peran: 'Anggota' },
+  { nama: 'Arin Royanto, S.STP', nip: '19820517 200012 1 001', golongan: 'IV B', jabatan: 'Camat Ngawi', unit_kerja: 'Camat Ngawi', peran: 'Anggota' },
+  { nama: 'Andri Wika Cahyono', nip: '', golongan: '', jabatan: 'Kepala Desa Jururejo', unit_kerja: 'Desa Jururejo', peran: 'Anggota' },
+  { nama: 'Hermanto Alfin Cahyono, S.E.', nip: '19860525 201001 1 023', golongan: '', jabatan: 'Lurah Margomulyo Kec. Ngawi', unit_kerja: 'Lurah Margomulyo', peran: 'Anggota' }
 ];
 
 function populateTimSelect(){
@@ -532,6 +591,7 @@ function applyTimSelection(){
     if(sel.value === 'lain'){
       document.getElementById('f_nama').value = '';
       document.getElementById('f_jabatan').value = '';
+      document.getElementById('f_nip').value = '';
       document.getElementById('f_unit_kerja').value = '';
       document.getElementById('f_nama').focus();
     }
@@ -540,7 +600,78 @@ function applyTimSelection(){
   const t = TIM_PSU[parseInt(sel.value, 10)];
   document.getElementById('f_nama').value = t.nama;
   document.getElementById('f_jabatan').value = t.jabatan + (t.golongan ? ` (Gol. ${t.golongan})` : '');
+  document.getElementById('f_nip').value = t.nip || '';
   document.getElementById('f_unit_kerja').value = `${t.peran} Tim Teknis Verifikasi PSU`;
+}
+
+/* ---------- Data Umum (shared, diatur admin) ---------- */
+function setTanggalHariIni(){
+  const el = document.getElementById('f_tanggal');
+  if(el) el.value = new Date().toLocaleDateString('id-ID', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+}
+setTanggalHariIni();
+
+async function loadConfig(){
+  const hint = document.getElementById('dataUmumHint');
+  if(!sb) return;
+  const { data, error } = await sb.from('psu_config').select('*').eq('id', 1).maybeSingle();
+  if(error){
+    console.error(error);
+    if(hint) hint.textContent = 'Gagal memuat Data Umum dari admin: ' + error.message;
+    return;
+  }
+  document.getElementById('f_nama_perumahan').value = data?.nama_perumahan || '';
+  document.getElementById('f_alamat').value = data?.alamat || '';
+  document.getElementById('f_nama_pengembang').value = data?.nama_pengembang || '';
+  if(hint){
+    hint.textContent = data?.nama_perumahan
+      ? 'Diisi otomatis oleh admin. Kalau kosong / belum sesuai, hubungi admin.'
+      : 'Belum diisi admin. Hubungi admin untuk mengisi Data Umum lebih dulu.';
+  }
+}
+loadConfig();
+
+async function saveConfig(){
+  const msg = document.getElementById('cfgMsg');
+  const btn = document.getElementById('cfgSaveBtn');
+  msg.className = 'msg'; msg.style.display = 'none';
+
+  if(!sb){
+    msg.textContent = 'Koneksi database belum siap. Refresh halaman lalu coba lagi.';
+    msg.className = 'msg err'; msg.style.display = 'block';
+    return;
+  }
+
+  const payload = {
+    id: 1,
+    nama_perumahan: document.getElementById('cfg_nama_perumahan').value.trim(),
+    alamat: document.getElementById('cfg_alamat').value.trim(),
+    nama_pengembang: document.getElementById('cfg_nama_pengembang').value.trim(),
+    updated_at: new Date().toISOString()
+  };
+
+  btn.disabled = true; btn.textContent = 'Menyimpan...';
+  const { error } = await sb.from('psu_config').upsert(payload);
+  btn.disabled = false; btn.textContent = 'Simpan Data Umum';
+
+  if(error){
+    console.error(error);
+    msg.textContent = 'Gagal menyimpan: ' + error.message;
+    msg.className = 'msg err'; msg.style.display = 'block';
+  } else {
+    msg.textContent = 'Data Umum tersimpan & langsung berlaku untuk semua petugas.';
+    msg.className = 'msg ok'; msg.style.display = 'block';
+    loadConfig(); // refresh form view juga
+  }
+}
+
+async function loadConfigIntoAdminForm(){
+  if(!sb) return;
+  const { data, error } = await sb.from('psu_config').select('*').eq('id', 1).maybeSingle();
+  if(error){ console.error(error); return; }
+  document.getElementById('cfg_nama_perumahan').value = data?.nama_perumahan || '';
+  document.getElementById('cfg_alamat').value = data?.alamat || '';
+  document.getElementById('cfg_nama_pengembang').value = data?.nama_pengembang || '';
 }
 
 /* ---------- Hasil Penilaian dynamic rows ---------- */
@@ -730,6 +861,8 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
     document.querySelectorAll('.kesimpulan-opt').forEach(o => o.classList.remove('checked'));
     document.getElementById('syaratWrap').style.display = 'none';
     clearSig();
+    loadConfig(); // reset() ikut mengosongkan field readonly Data Umum, isi ulang
+    setTanggalHariIni();
   }
 });
 
@@ -743,6 +876,7 @@ function checkAdmin(){
     adminOk = true;
     document.getElementById('adminGate').style.display = 'none';
     document.getElementById('adminContent').style.display = 'block';
+    loadConfigIntoAdminForm();
     loadRekap();
   } else {
     amsg.textContent = 'Passcode salah.';
