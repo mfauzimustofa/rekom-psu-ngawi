@@ -20,6 +20,7 @@
     unit_kerja text,
     nama_perumahan text not null,
     alamat text,
+    nama_pengembang text,
     hasil_penilaian jsonb not null default '[]',
     kesimpulan text not null,
     syarat text,
@@ -41,6 +42,11 @@
 3. ADMIN_PASSCODE di bawah cuma pengaman ringan di sisi browser (bukan security
    sebenarnya) supaya rekap tidak sembarangan dibuka. Kalau butuh lebih aman,
    pasang RLS by auth atau passcode di edge function.
+
+   KALAU TABEL psu_rekomendasi SUDAH ADA SEBELUMNYA (belum ada kolom
+   nama_pengembang), cukup jalankan query tambahan ini di SQL Editor:
+
+   alter table psu_rekomendasi add column if not exists nama_pengembang text;
 =====================================================================
 -->
 
@@ -316,7 +322,7 @@
 <body>
 
 <header>
-  <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN PERMUKIMAN</h1>
+  <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h1>
   <p>Kabupaten Ngawi</p>
 </header>
 
@@ -334,6 +340,12 @@
 
       <div class="card">
         <h2>Data Petugas</h2>
+        <div class="field">
+          <label>Nama (Tim Teknis Verifikasi PSU)</label>
+          <select id="timSelect" onchange="applyTimSelection()">
+            <option value="">-- Pilih dari Tim Teknis --</option>
+          </select>
+        </div>
         <div class="field">
           <label>Nama</label>
           <input type="text" id="f_nama" required>
@@ -364,10 +376,14 @@
           <label>Alamat</label>
           <textarea id="f_alamat" rows="2"></textarea>
         </div>
+        <div class="field">
+          <label>Nama Pengembang</label>
+          <input type="text" id="f_nama_pengembang">
+        </div>
       </div>
 
       <div class="card">
-        <h2>Hasil Penilaian</h2>
+        <h2>Hasil Pemeriksaan</h2>
         <div id="penilaianList"></div>
         <button type="button" class="add-btn" onclick="addPenilaian()">+ Tambah Poin Penilaian</button>
       </div>
@@ -459,6 +475,52 @@ function switchTab(tab){
   document.getElementById('viewAdmin').style.display = tab === 'admin' ? 'block' : 'none';
   document.getElementById('tabFormBtn').classList.toggle('active', tab === 'form');
   document.getElementById('tabAdminBtn').classList.toggle('active', tab === 'admin');
+}
+
+/* ---------- Data Tim Teknis Verifikasi PSU ---------- */
+const TIM_PSU = [
+  { nama: 'Wahyudhi Puruhita, S.T., M.T.', golongan: 'IV A', jabatan: 'Kepala Bidang Perumahan Rakyat pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Sekretaris' },
+  { nama: 'Hari Siswanto, S.T.', golongan: 'IV C', jabatan: 'Pengawas Penyelenggaraan Urusan Pemerintahan Daerah (PPUPD) Auditor Ahli Madya di Inspektorat Ngawi', peran: 'Anggota' },
+  { nama: 'Akhmad Arwan Arifiyanto, S.E.', golongan: 'IV A', jabatan: 'Kepala Bidang Pengelolaan Barang Milik Daerah pada Badan Keuangan Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Faisal Arif, S.Tr', golongan: 'III A', jabatan: 'Analisis Survey Pengukuran dan Pemetaan pada Kantor Pertanahan Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Hendri Prasetyawan, S.Hut', golongan: 'III D', jabatan: 'Perencana Ahli Muda pada Badan Perencanaan Pembangunan Daerah Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Etiek Eka Widaryanti, S.T.', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Tri Wahyuni, S.T.', golongan: 'III D', jabatan: 'Penata Kelola Bangunan Gedung dan Kawasan Permukiman Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Pratiwi Kusuma Ningrum, S.T., M.Si', golongan: 'III D', jabatan: 'Penata Ruang Ahli Muda pada Dinas Perumahan Rakyat dan Kawasan Permukiman Kab. Ngawi', peran: 'Anggota' },
+  { nama: 'Arin Royanto, S.STP', golongan: 'IV B', jabatan: 'Camat Ngawi', peran: 'Anggota' },
+  { nama: 'Andri Wika Cahyono', golongan: '', jabatan: 'Kepala Desa Jururejo', peran: 'Anggota' }
+];
+
+function populateTimSelect(){
+  const sel = document.getElementById('timSelect');
+  TIM_PSU.forEach((t, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = `${t.nama} — ${t.peran}`;
+    sel.appendChild(opt);
+  });
+  const other = document.createElement('option');
+  other.value = 'lain';
+  other.textContent = '-- Lainnya (isi manual) --';
+  sel.appendChild(other);
+}
+populateTimSelect();
+
+function applyTimSelection(){
+  const sel = document.getElementById('timSelect');
+  if(sel.value === '' || sel.value === 'lain'){
+    if(sel.value === 'lain'){
+      document.getElementById('f_nama').value = '';
+      document.getElementById('f_jabatan').value = '';
+      document.getElementById('f_unit_kerja').value = '';
+      document.getElementById('f_nama').focus();
+    }
+    return;
+  }
+  const t = TIM_PSU[parseInt(sel.value, 10)];
+  document.getElementById('f_nama').value = t.nama;
+  document.getElementById('f_jabatan').value = t.jabatan + (t.golongan ? ` (Gol. ${t.golongan})` : '');
+  document.getElementById('f_unit_kerja').value = `${t.peran} Tim Teknis Verifikasi PSU`;
 }
 
 /* ---------- Hasil Penilaian dynamic rows ---------- */
@@ -620,6 +682,7 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
     unit_kerja: document.getElementById('f_unit_kerja').value.trim(),
     nama_perumahan: namaPerumahan,
     alamat: document.getElementById('f_alamat').value.trim(),
+    nama_pengembang: document.getElementById('f_nama_pengembang').value.trim(),
     hasil_penilaian: hasilPenilaian,
     kesimpulan: kesimpulanEl.value,
     syarat: kesimpulanEl.value === 'Setuju, dengan syarat' ? document.getElementById('f_syarat').value.trim() : null,
@@ -640,6 +703,7 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
     msg.textContent = 'Rekomendasi berhasil dikirim. Terima kasih.';
     msg.className = 'msg ok'; msg.style.display='block';
     document.getElementById('psuForm').reset();
+    document.getElementById('timSelect').value = '';
     document.getElementById('penilaianList').innerHTML = '';
     penilaianCount = 0;
     for(let i=0;i<4;i++) addPenilaian();
@@ -712,6 +776,7 @@ async function loadRekap(){
         <div class="rekap-meta"><b>${escapeHtml(row.nama)}</b>${row.jabatan ? ' — ' + escapeHtml(row.jabatan) : ''}${row.nip ? ' — NIP ' + escapeHtml(row.nip) : ''}</div>
         ${row.unit_kerja ? `<div class="rekap-meta">${escapeHtml(row.unit_kerja)}</div>` : ''}
         ${row.alamat ? `<div class="rekap-meta">Alamat: ${escapeHtml(row.alamat)}</div>` : ''}
+        ${row.nama_pengembang ? `<div class="rekap-meta">Pengembang: ${escapeHtml(row.nama_pengembang)}</div>` : ''}
         ${poin ? `<ul>${poin}</ul>` : ''}
         ${row.syarat ? `<div class="rekap-meta">Syarat: ${escapeHtml(row.syarat)}</div>` : ''}
         ${row.signature_data ? `<img src="${row.signature_data}" alt="tanda tangan">` : ''}
@@ -822,7 +887,7 @@ async function exportWordRow(idx){
       alignment: AlignmentType.CENTER,
       spacing: { before: 200, after: 320 },
       children: [ new TextRun({
-        text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN PERMUKIMAN KABUPATEN NGAWI',
+        text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN KABUPATEN NGAWI',
         bold: true, font: FONT, size: TITLE_SIZE
       }) ]
     }));
@@ -839,11 +904,12 @@ async function exportWordRow(idx){
     children.push(sectionHeading('DATA UMUM'));
     children.push(fieldTable([
       ['Nama Perumahan', row.nama_perumahan],
-      ['Alamat', row.alamat]
+      ['Alamat', row.alamat],
+      ['Nama Pengembang', row.nama_pengembang]
     ]));
 
-    // ---- hasil penilaian ----
-    children.push(sectionHeading('HASIL PENILAIAN:'));
+    // ---- hasil pemeriksaan ----
+    children.push(sectionHeading('HASIL PEMERIKSAAN:'));
     const poin = row.hasil_penilaian || [];
     if(poin.length === 0){
       children.push(new Paragraph({
@@ -967,11 +1033,12 @@ function exportCsv(){
     alert('Belum ada data untuk di-export.');
     return;
   }
-  const headers = ['Tanggal','Nama Perumahan','Alamat','Nama Petugas','Jabatan','NIP','Unit Kerja','Hasil Penilaian','Kesimpulan','Syarat'];
+  const headers = ['Tanggal','Nama Perumahan','Alamat','Nama Pengembang','Nama Petugas','Jabatan','NIP','Unit Kerja','Hasil Pemeriksaan','Kesimpulan','Syarat'];
   const rows = lastRekapData.map(row => [
     new Date(row.created_at).toLocaleString('id-ID'),
     row.nama_perumahan,
     row.alamat,
+    row.nama_pengembang,
     row.nama,
     row.jabatan,
     row.nip,
