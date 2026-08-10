@@ -206,12 +206,28 @@
     margin:0 auto;
     text-align:left;
   }
+  .logo-wrap{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+    flex:none;
+  }
   header .logo{
     width:clamp(44px,5vw,60px);
     height:clamp(44px,5vw,60px);
     flex:none;
     object-fit:contain;
     filter:drop-shadow(0 1px 3px rgba(0,0,0,.35));
+  }
+  .logo-caption{
+    font-size:clamp(9px,.9vw,10.5px);
+    font-weight:700;
+    letter-spacing:.4px;
+    color:#fff;
+    opacity:.9;
+    text-align:center;
+    white-space:nowrap;
   }
   header h1{
     font-size:clamp(14px,1.6vw,19px);
@@ -551,9 +567,12 @@
 
 <header>
   <div class="header-inner">
-    <img src="logo-ngawi.svg" alt="Lambang Kabupaten Ngawi" class="logo">
+    <div class="logo-wrap">
+      <img src="logo-ngawi.svg" alt="Lambang Kabupaten Ngawi" class="logo">
+      <span class="logo-caption">DPRKP Ngawi</span>
+    </div>
     <div>
-      <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN</h1>
+      <h1>REKOMENDASI TIM VERIFIKASI PENYERAHAN<br>PRASARANA, SARANA DAN UTILITAS (PSU) PERUMAHAN DAN KAWASAN PERMUKIMAN</h1>
       <p>Kabupaten Ngawi</p>
     </div>
   </div>
@@ -1599,7 +1618,7 @@ async function exportWordRow(idx){
       alignment: AlignmentType.CENTER,
       spacing: { before: 200, after: 320 },
       children: [ new TextRun({
-        text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS PERUMAHAN DAN KAWASAN PERMUKIMAN KABUPATEN NGAWI',
+        text: 'REKOMENDASI TIM VERIFIKASI PENYERAHAN PRASARANA, SARANA DAN UTILITAS (PSU) PERUMAHAN DAN KAWASAN PERMUKIMAN KABUPATEN NGAWI',
         bold: true, font: FONT, size: TITLE_SIZE
       }) ]
     }));
