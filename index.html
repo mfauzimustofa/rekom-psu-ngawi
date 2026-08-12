@@ -357,21 +357,6 @@
     #petugasAdminList .rekap-item, #perumahanAdminList .rekap-item{margin-bottom:0;}
   }
 
-  .penilaian-row{
-    display:flex;
-    gap:8px;
-    margin-bottom:8px;
-    align-items:flex-start;
-  }
-  .penilaian-row span.num{
-    width:22px;
-    padding-top:9px;
-    font-size:13px;
-    font-weight:700;
-    color:var(--navy);
-    flex-shrink:0;
-  }
-  .penilaian-row input{flex:1;}
   .rm-btn{
     background:none;
     border:none;
@@ -523,6 +508,7 @@
   .badge.tidak{background:var(--danger-bg);color:var(--danger);}
   .badge.syarat{background:var(--warn-bg);color:var(--warn);}
   .rekap-item ul{margin:6px 0;padding-left:18px;font-size:13px;}
+  .rekap-hasil{margin:6px 0;font-size:13px;white-space:pre-line;color:var(--text);}
   .rekap-item img{width:140px;border:1px solid var(--border);border-radius:7px;margin-top:6px;background:#fff;}
   .rekap-actions{margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;gap:8px;}
   .word-btn{
@@ -645,8 +631,9 @@
 
       <div class="card">
         <h2>Hasil Pemeriksaan</h2>
-        <div id="penilaianList"></div>
-        <button type="button" class="add-btn" onclick="addPenilaian()">+ Tambah Uraian Penilaian</button>
+        <div class="field">
+          <textarea id="f_hasil_pemeriksaan" rows="6" placeholder="Tuliskan uraian hasil pemeriksaan di sini..."></textarea>
+        </div>
       </div>
 
       <div class="card">
@@ -1197,33 +1184,6 @@ function renderPerumahanAdminList(){
   `).join('');
 }
 
-/* ---------- Hasil Penilaian dynamic rows ---------- */
-let penilaianCount = 0;
-function addPenilaian(value){
-  penilaianCount++;
-  const wrap = document.getElementById('penilaianList');
-  const row = document.createElement('div');
-  row.className = 'penilaian-row';
-  row.innerHTML = `
-    <span class="num">${penilaianCount}.</span>
-    <input type="text" class="penilaian-input" placeholder="Uraian penilaian...">
-    <button type="button" class="rm-btn" onclick="removePenilaian(this)">&times;</button>
-  `;
-  wrap.appendChild(row);
-  if(value) row.querySelector('input').value = value;
-  renumberPenilaian();
-}
-function removePenilaian(btn){
-  btn.closest('.penilaian-row').remove();
-  renumberPenilaian();
-}
-function renumberPenilaian(){
-  const rows = document.querySelectorAll('#penilaianList .penilaian-row');
-  rows.forEach((r,i) => r.querySelector('.num').textContent = (i+1) + '.');
-  penilaianCount = rows.length;
-}
-// start with 4 rows like the original form
-for(let i=0;i<4;i++) addPenilaian();
 
 /* ---------- Kesimpulan radio behavior ---------- */
 document.querySelectorAll('.kesimpulan-opt').forEach(opt => {
@@ -1345,9 +1305,7 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
     return;
   }
 
-  const hasilPenilaian = Array.from(document.querySelectorAll('.penilaian-input'))
-    .map(i => i.value.trim())
-    .filter(v => v.length > 0);
+  const hasilPenilaian = document.getElementById('f_hasil_pemeriksaan').value.trim();
 
   const payload = {
     nama,
@@ -1378,9 +1336,7 @@ document.getElementById('psuForm').addEventListener('submit', async (e) => {
     msg.className = 'msg ok'; msg.style.display='block';
     document.getElementById('psuForm').reset();
     document.getElementById('timSelect').value = '';
-    document.getElementById('penilaianList').innerHTML = '';
-    penilaianCount = 0;
-    for(let i=0;i<4;i++) addPenilaian();
+    document.getElementById('f_hasil_pemeriksaan').value = '';
     document.querySelectorAll('.kesimpulan-opt').forEach(o => o.classList.remove('checked'));
     document.getElementById('syaratWrap').style.display = 'none';
     clearSig();
@@ -1466,7 +1422,8 @@ async function loadRekap(){
     const tanggal = new Date(row.created_at).toLocaleString('id-ID', {
       day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'
     });
-    const poin = (row.hasil_penilaian || []).map(p => `<li>${escapeHtml(p)}</li>`).join('');
+    const hasilText = Array.isArray(row.hasil_penilaian) ? row.hasil_penilaian.join('\n') : (row.hasil_penilaian || '');
+    const hasilHtml = hasilText ? escapeHtml(hasilText) : '';
     return `
       <div class="rekap-item status-${badgeClass}">
         <div class="top">
@@ -1480,7 +1437,7 @@ async function loadRekap(){
         ${row.unit_kerja ? `<div class="rekap-meta">${escapeHtml(row.unit_kerja)}</div>` : ''}
         ${row.alamat ? `<div class="rekap-meta">Alamat: ${escapeHtml(row.alamat)}</div>` : ''}
         ${row.nama_pengembang ? `<div class="rekap-meta">Pengembang: ${escapeHtml(row.nama_pengembang)}</div>` : ''}
-        ${poin ? `<ul>${poin}</ul>` : ''}
+        ${hasilHtml ? `<div class="rekap-hasil">${hasilHtml}</div>` : ''}
         ${row.syarat ? `<div class="rekap-meta">Syarat: ${escapeHtml(row.syarat)}</div>` : ''}
         ${row.signature_data ? `<img src="${row.signature_data}" alt="tanda tangan">` : ''}
         <div class="rekap-actions">
@@ -1641,21 +1598,21 @@ async function exportWordRow(idx){
 
     // ---- hasil pemeriksaan ----
     children.push(sectionHeading('HASIL PEMERIKSAAN:'));
-    const poin = row.hasil_penilaian || [];
-    if(poin.length === 0){
+    const hasilText = Array.isArray(row.hasil_penilaian) ? row.hasil_penilaian.join('\n') : (row.hasil_penilaian || '');
+    const hasilLines = hasilText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    if(hasilLines.length === 0){
       children.push(new Paragraph({
         indent: { left: 360 },
         spacing: { after: 100 },
         children: [ new TextRun({ text: '-', font: FONT, size: SIZE }) ]
       }));
     } else {
-      poin.forEach((p, i) => {
+      hasilLines.forEach(line => {
         children.push(new Paragraph({
-          indent: { left: 360, hanging: 260 },
+          indent: { left: 360 },
           spacing: { after: 120 },
           alignment: AlignmentType.JUSTIFIED,
-          children: [ new TextRun({ text: `${i+1}.\t${p}`, font: FONT, size: SIZE }) ],
-          tabStops: [{ type: 'left', position: 360 }]
+          children: [ new TextRun({ text: line, font: FONT, size: SIZE }) ]
         }));
       });
     }
@@ -1772,7 +1729,7 @@ function exportCsv(){
     row.jabatan,
     row.nip,
     row.unit_kerja,
-    (row.hasil_penilaian || []).join(' | '),
+    Array.isArray(row.hasil_penilaian) ? row.hasil_penilaian.join(' | ') : (row.hasil_penilaian || ''),
     row.kesimpulan,
     row.syarat
   ]);
